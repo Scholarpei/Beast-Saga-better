@@ -9,6 +9,11 @@ verification/
 tools/*
 !tools/*.ps1
 !tools/*.py
+.local/
+AGENTS.md
+MEMORY.md
+PROGRESS.md
+VERIFICATION.md
 *.es3
 *.dat
 *.log
