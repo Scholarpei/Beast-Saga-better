@@ -114,6 +114,12 @@ try
         Require(CheckPreview.Evaluate("IsPlayerPro('感知','大于等于',15)", (_, _) => double.NaN).Passed is null));
     Test("enabling config cannot unlock unverified production saves", () =>
         Require(!SafetyPolicy.CanOperate(false, true)));
+    Test("production operation requires config and authorization marker", () =>
+    {
+        Require(!SafetyPolicy.CanOperate(false, true, false));
+        Require(!SafetyPolicy.CanOperate(false, false, true));
+        Require(SafetyPolicy.CanOperate(false, true, true));
+    });
     Test("disabled checkpoints leave even sandbox writes off", () =>
         Require(!SafetyPolicy.CanOperate(true, false)));
     Test("verified sandbox can enable writes", () =>

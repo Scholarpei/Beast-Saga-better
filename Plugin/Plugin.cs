@@ -41,7 +41,9 @@ public sealed class Plugin : BasePlugin
     internal static bool NativeLoadCompleted;
     internal static int GuiFrames;
     internal const string KnownFingerprint = "B12412BC21B0B88A07851D15235736AFCFCE48A22AB8D3F1CB3DFB8376360359";
-    internal static bool CheckpointsActive => SafetyPolicy.CanOperate(TestMode, EnableCheckpoints.Value);
+    internal const string ProductionAuthorizationFile = "SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED";
+    internal static bool CheckpointsActive => SafetyPolicy.CanOperate(
+        TestMode, EnableCheckpoints.Value, File.Exists(Path.Combine(GameRoot, ProductionAuthorizationFile)));
     private static bool previousDialogue;
 
     public override void Load()
