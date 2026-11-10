@@ -255,6 +255,10 @@ internal static class IsolatedLoadPatch
 public sealed class RuntimeDriver : MonoBehaviour
 {
     private GUIStyle? messageStyle;
+    private GUIStyle? futureStyle;
+    private GUIStyle? futureTitleStyle;
+    private GUIStyle? connectorStyle;
+    private Dictionary<FuturePreviewKind, GUIStyle>? futureStyles;
 
     public RuntimeDriver(IntPtr pointer) : base(pointer) { }
 
@@ -285,8 +289,9 @@ public sealed class RuntimeDriver : MonoBehaviour
         Plugin.GuiFrames++;
         if (Time.realtimeSinceStartup <= Plugin.NoticeUntil && !string.IsNullOrEmpty(Plugin.Notice))
             DrawMessage(new Rect(Screen.width * 0.2f, 24, Screen.width * 0.6f, 46), Plugin.Notice);
-        if (Plugin.EnableIndicators.Value && Plugin.IsDialogue && !string.IsNullOrEmpty(Indicators.SubtitleHint))
-            DrawMessage(new Rect(Screen.width * 0.22f, Screen.height * 0.62f - 30, Screen.width * 0.56f, 42), Indicators.SubtitleHint);
+        RuntimeDriver.ClearStaleHover(Indicators.HoveredButton);
+        if (Plugin.EnableIndicators.Value && Plugin.IsDialogue && Indicators.HoveredButton != null && !string.IsNullOrEmpty(Indicators.HoverHint))
+            DrawFutureWindow();
     }
 
     private void DrawMessage(Rect bounds, string message)
@@ -299,6 +304,102 @@ public sealed class RuntimeDriver : MonoBehaviour
         messageStyle.fontSize = Math.Clamp((int)(Screen.height / 50f), 18, 28);
         GUI.Box(bounds, "");
         GUI.Label(bounds, message, messageStyle);
+    }
+
+    private void DrawFutureWindow()
+    {
+        var baseSize = Math.Clamp((int)(Screen.height / 50f), 18, 28);
+        futureStyle ??= new GUIStyle(GUI.skin.label) { wordWrap = true, alignment = TextAnchor.MiddleLeft };
+        connectorStyle ??= new GUIStyle
+        {
+            normal = { background = Texture2D.whiteTexture, textColor = new Color32(125, 138, 158, 255) },
+            alignment = TextAnchor.MiddleCenter
+        };
+        futureTitleStyle ??= new GUIStyle(GUI.skin.label)
+        {
+            wordWrap = false,
+            alignment = TextAnchor.MiddleLeft,
+            fontStyle = FontStyle.Bold
+        };
+        futureStyles ??= new Dictionary<FuturePreviewKind, GUIStyle>
+        {
+            [FuturePreviewKind.Title] = futureTitleStyle,
+            [FuturePreviewKind.Check] = Copy(futureStyle, new Color32(120, 210, 255, 255)),
+            [FuturePreviewKind.Affection] = Copy(futureStyle, new Color32(255, 176, 205, 255)),
+            [FuturePreviewKind.Gain] = Copy(futureStyle, new Color32(140, 235, 165, 255)),
+            [FuturePreviewKind.Loss] = Copy(futureStyle, new Color32(255, 140, 120, 255)),
+            [FuturePreviewKind.Equipment] = Copy(futureStyle, new Color32(195, 180, 255, 255)),
+            [FuturePreviewKind.State] = Copy(futureStyle, new Color32(205, 215, 225, 255)),
+            [FuturePreviewKind.Unknown] = Copy(futureStyle, new Color32(255, 218, 110, 255)),
+            [FuturePreviewKind.Boundary] = Copy(futureStyle, new Color32(175, 185, 200, 255))
+        };
+        var lines = Indicators.HoverHint.Split('\n');
+        foreach (var style in futureStyles.Values) style.fontSize = baseSize;
+        var presentation = lines.Select(FuturePreviewPresentation.Classify).ToArray();
+        var width = Math.Clamp(Screen.width * 0.32f, 320, Math.Min(560, Screen.width - 24));
+        var contentHeight = 0f;
+        var rowHeights = new float[lines.Length];
+        for (var index = 0; index < lines.Length; index++)
+        {
+            rowHeights[index] = Math.Max(futureStyles[presentation[index].Kind].CalcHeight(new GUIContent(lines[index]), width - 26), futureStyle.lineHeight);
+            contentHeight += rowHeights[index];
+        }
+        var height = Math.Min(contentHeight + 28, (int)(Screen.height * 0.62f));
+        var position = Event.current.mousePosition;
+        var bounds = new Rect(position.x + 18, position.y + 16, width, height);
+        if (bounds.xMax > Screen.width - 12) bounds.x = Math.Max(12, Screen.width - 12 - width);
+        if (bounds.yMax > Screen.height - 12) bounds.y = Math.Max(12, position.y - 16 - height);
+        var oldColor = GUI.color;
+        GUI.color = new Color32(16, 18, 26, 234);
+        GUI.Box(bounds, "");
+        GUI.color = new Color32(79, 89, 110, 170);
+        GUI.Box(new Rect(bounds.x, bounds.y, bounds.width, 2), "");
+        GUI.Box(new Rect(bounds.x, bounds.y + bounds.height - 2, bounds.width, 2), "");
+        GUI.color = oldColor;
+        var rowTop = 0f;
+        GUI.BeginGroup(new Rect(bounds.x + 11, bounds.y + 9, bounds.width - 22, bounds.height - 18));
+        var branchLeft = 0f;
+        var branchBottoms = new Dictionary<int, float>();
+        for (var index = 0; index < lines.Length; index++)
+        {
+            if (lines[index].StartsWith("├─ ") || lines[index].StartsWith("└─ ")) branchLeft = futureStyle.CalcSize(new GUIContent("├─ ")).x;
+            else if (branchBottoms.Count > 0 && !string.IsNullOrWhiteSpace(lines[index]) && lines[index].StartsWith("│  ")) { }
+            else if (branchBottoms.Count > 0 && !string.IsNullOrWhiteSpace(lines[index])) branchBottoms.Clear();
+            var line = new Rect(0, rowTop, bounds.width - 22, rowHeights[index]);
+            rowTop += rowHeights[index];
+            if (line.yMax > bounds.height - 18) break;
+            if (lines[index].StartsWith("├─ ") || lines[index].StartsWith("└─ "))
+            {
+                GUI.Label(new Rect(0, line.y, branchLeft, line.height), lines[index][..2], futureStyles[presentation[index].Kind]);
+                GUI.Label(new Rect(branchLeft, line.y, line.width - branchLeft, line.height), lines[index][3..], futureStyles[presentation[index].Kind]);
+                if (lines[index].StartsWith("├─ ")) branchBottoms[index] = line.yMax;
+            }
+            else
+            {
+                var indent = lines[index].StartsWith("│  ") ? branchLeft : 0;
+                GUI.Label(new Rect(indent, line.y, line.width - indent, line.height), lines[index].Replace("│  ", ""), futureStyles[presentation[index].Kind]);
+            }
+            if (branchBottoms.Count > 0 && rowTop >= branchBottoms.Values.Max() - 0.5f)
+            {
+                var oldLineColor = GUI.color;
+                foreach (var branchStart in branchBottoms.Keys)
+                {
+                    var top = branchBottoms[branchStart] - rowHeights[branchStart];
+                    GUI.Label(new Rect(branchLeft * 0.42f, top + 2, 1.5f, rowTop - top - 4), GUIContent.none, connectorStyle);
+                }
+                _ = oldLineColor;
+            }
+        }
+        GUI.EndGroup();
+    }
+
+    private static GUIStyle Copy(GUIStyle style, Color32 color) => new(style) { normal = { textColor = color } };
+
+    internal static void ClearStaleHover(StandardUIResponseButton? button)
+    {
+        if (button == null || button.isVisible) return;
+        Indicators.HoveredButton = null;
+        Indicators.HoverHint = "";
     }
 }
 

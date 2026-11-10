@@ -119,7 +119,7 @@ internal static class TestBridge
             var subtitle = DialogueManager.conversationController.currentState?.subtitle;
             values["entry"] = subtitle?.dialogueEntry?.id;
             values["text"] = subtitle?.formattedText?.text;
-            values["hint"] = Indicators.SubtitleHint;
+            values["hoverHint"] = Indicators.HoverHint;
             values["sequencerPlaying"] = DialogueManager.conversationView?.sequencer?.isPlaying;
         }
         values["coroutine"] = CoroutineStatus;

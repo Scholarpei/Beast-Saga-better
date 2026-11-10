@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="../Core/SafeDialogueTools.Core.csproj" />
     <Compile Include="../Plugin/Indicators.cs" Link="Plugin/Indicators.cs" />
+    <Compile Include="../Plugin/FuturePreviewPresentation.cs" Link="Plugin/FuturePreviewPresentation.cs" />
   </ItemGroup>
 </Project>

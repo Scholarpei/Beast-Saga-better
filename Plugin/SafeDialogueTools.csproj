@@ -16,5 +16,6 @@
     <Reference Include="0Harmony"><HintPath>$(GameDir)/BepInEx/core/0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="Il2CppInterop.Runtime"><HintPath>$(GameDir)/BepInEx/core/Il2CppInterop.Runtime.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="$(GameDir)/BepInEx/interop/*.dll"><Private>false</Private></Reference>
+    <Reference Include="ExcelData"><HintPath>$(GameDir)/BepInEx/interop/ExcelData.dll</HintPath><Private>false</Private></Reference>
   </ItemGroup>
 </Project>

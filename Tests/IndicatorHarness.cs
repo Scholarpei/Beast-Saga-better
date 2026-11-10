@@ -14,8 +14,37 @@ namespace SafeDialogueTools.Tests
             Postfix(typeof(StandardUIResponseButton), "SetFormattedText", button, response.formattedText);
             button.response = response;
             button.text = "3." + button.text;
-            Postfix(typeof(StandardUIMenuPanel), "SetResponseButton", new StandardUIMenuPanel(), button, response);
+        button.isVisible = true;
+        Hover(button, response);
         }
+
+    internal static void Rebind(StandardUIResponseButton button, Response response)
+    {
+        button.response = response;
+        Postfix(typeof(StandardUIMenuPanel), "SetResponseButton", new StandardUIMenuPanel(), button, response);
+    }
+
+    internal static void Hover(StandardUIResponseButton button, Response response)
+    {
+        button.response = response;
+        Postfix(typeof(StandardUIResponseButton), "OnPointerEnter", button);
+    }
+
+    internal static void Leave(StandardUIResponseButton button)
+    {
+        Postfix(typeof(StandardUIResponseButton), "OnPointerExit", button);
+    }
+
+    internal static void Click(StandardUIResponseButton button)
+    {
+        foreach (var type in typeof(Indicators).Assembly.GetTypes())
+        {
+            var patch = type.GetCustomAttribute<HarmonyLib.HarmonyPatch>();
+            if (patch?.Target != typeof(StandardUIResponseButton) || patch.Method != "OnClick") continue;
+            var prefix = type.GetMethod("Prefix", BindingFlags.Static | BindingFlags.NonPublic);
+            prefix?.Invoke(null, null);
+        }
+    }
 
         private static void Postfix(Type target, string method, object instance, params object[] args)
         {
@@ -54,10 +83,19 @@ namespace HarmonyLib
 
 namespace PixelCrushers.DialogueSystem
 {
-    internal sealed class Link(DialogueEntry entry) { internal DialogueEntry Entry = entry; }
+    internal sealed class Link
+    {
+        internal Link(DialogueEntry entry, int id = -1)
+        {
+            if (id >= 0) entry.id = id;
+            Entry = entry;
+        }
+        internal DialogueEntry Entry = null!;
+    }
     internal sealed class DialogueEntry
     {
         internal string conditionsString = "", userScript = "", Sequence = "";
+        internal int conversationID = 2, id = 90000;
         internal List<Link> outgoingLinks = new();
     }
     internal sealed class FormattedText { internal string text = ""; }
@@ -70,7 +108,11 @@ namespace PixelCrushers.DialogueSystem
     {
         internal Response? response;
         internal string text = "";
+        internal bool isVisible = true;
         internal void SetFormattedText(FormattedText text) { }
+        internal void OnPointerEnter() { }
+        internal void OnPointerExit() { }
+        internal void OnClick() { }
     }
     internal sealed class StandardUIMenuPanel
     {
@@ -91,6 +133,15 @@ namespace SafeDialogueTools
         internal sealed class Log { internal void LogWarning(string text) => throw new Exception(text); }
         internal static Setting EnableIndicators = new();
         internal static Log Logger = new();
+    }
+    internal static class RuntimeDriver
+    {
+        internal static void ClearStaleHover(StandardUIResponseButton? button)
+        {
+            if (button == null || button.isVisible) return;
+            Indicators.HoveredButton = null;
+            Indicators.HoverHint = "";
+        }
     }
 }
 
@@ -118,4 +169,32 @@ internal sealed class PlayerDataHelper
 {
     internal static PlayerDataHelper _Instance = new();
     internal float LifeYiLiFuRen() => 0;
+}
+internal sealed class ExcelDataHelp
+{
+    internal sealed class FriendFavorHelper
+    {
+        internal readonly Dictionary<string, string> Names = new();
+        internal string GetShowName(string name) => Names.TryGetValue(name, out var shown) ? shown : "";
+    }
+
+    internal static FriendFavorHelper? FriendFavor { get; set; } = new();
+
+    internal sealed class KungFuHelper
+    {
+        internal string GetRankColor(int rank) => rank switch { 1 => "FFFFFF", 2 => "4DE28A", _ => "6FA8FF" };
+    }
+
+    internal static KungFuHelper? KungFu { get; set; } = new();
+}
+
+internal sealed class ItemDataSet { internal int _Rank = 1; }
+internal sealed class EquipDataSet { internal string _Rank = "2"; }
+internal sealed class LoadDataSet
+{
+    internal static LoadDataSet? _Instance = new();
+    private readonly Dictionary<string, ItemDataSet> items = new() { ["1铁矿"] = new() { _Rank = 1 } };
+    private readonly Dictionary<string, EquipDataSet> equips = new() { ["2铸铁剑"] = new() };
+    internal ItemDataSet? GetItemData(string name) => items.TryGetValue(name, out var data) ? data : null;
+    internal EquipDataSet? GetEuipData(string name) => equips.TryGetValue(name, out var data) ? data : null;
 }
