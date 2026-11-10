@@ -329,6 +329,8 @@ public sealed class RuntimeDriver : MonoBehaviour
             [FuturePreviewKind.Gain] = Copy(futureStyle, new Color32(140, 235, 165, 255)),
             [FuturePreviewKind.Loss] = Copy(futureStyle, new Color32(255, 140, 120, 255)),
             [FuturePreviewKind.Equipment] = Copy(futureStyle, new Color32(195, 180, 255, 255)),
+            [FuturePreviewKind.Party] = Copy(futureStyle, new Color32(120, 225, 255, 255)),
+            [FuturePreviewKind.Progression] = Copy(futureStyle, new Color32(220, 190, 255, 255)),
             [FuturePreviewKind.State] = Copy(futureStyle, new Color32(205, 215, 225, 255)),
             [FuturePreviewKind.Unknown] = Copy(futureStyle, new Color32(255, 218, 110, 255)),
             [FuturePreviewKind.Boundary] = Copy(futureStyle, new Color32(175, 185, 200, 255))

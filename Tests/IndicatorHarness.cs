@@ -152,9 +152,11 @@ internal sealed class PlayerDataManager
     internal static PlayerDataManager _Instance = new();
     internal object _PlayerData = new();
     internal bool _IsLoadOver = true;
+    internal readonly Dictionary<string, int> ItemCounts = new();
     internal int GetWuXing() => 10;
     internal int GetPro(PlayerProType type) => 10;
     internal int GetLifeTypeLV(LifeType type) => 10;
+    internal int ItemCount(string name) => ItemCounts.TryGetValue(name, out var count) ? count : 0;
 }
 internal sealed class FriendData { internal List<string> BattleFriend = new(); }
 internal sealed class Friend { internal int GetLifeLvbyType(LifeType type) => 10; }
