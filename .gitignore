@@ -1,0 +1,17 @@
+**/bin/
+**/obj/
+**/__pycache__/
+**/*.pyc
+backups/
+sandbox/
+dist/
+verification/
+tools/*
+!tools/*.ps1
+!tools/*.py
+*.es3
+*.dat
+*.log
+*.zip
+*.dll
+*.exe
