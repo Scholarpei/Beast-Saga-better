@@ -82,16 +82,18 @@ internal static class Indicators
     }
 }
 
-[HarmonyPatch(typeof(StandardUIResponseButton), nameof(StandardUIResponseButton.SetFormattedText))]
+[HarmonyPatch(typeof(StandardUIMenuPanel), nameof(StandardUIMenuPanel.SetResponseButton))]
 internal static class ResponseIndicatorPatch
 {
-    private static void Postfix(StandardUIResponseButton __instance, FormattedText __0)
+    private static void Postfix(StandardUIResponseButton __0, Response __1)
     {
         try
         {
-            if (__instance.response == null) return;
-            var hint = Indicators.Hint(__instance.response.destinationEntry);
-            if (!string.IsNullOrEmpty(hint) && __0 != null) __instance.text = __0.text + "  [" + hint + "]";
+            // SetFormattedText runs before the native menu assigns button.response.
+            // Use this call's response after binding and numbering have completed.
+            if (__0 == null || __1 == null) return;
+            var hint = Indicators.Hint(__1.destinationEntry);
+            if (!string.IsNullOrEmpty(hint)) __0.text += "  [" + hint + "]";
         }
         catch (Exception error) { Plugin.Logger.LogWarning("Indicator skipped: " + error.Message); }
     }

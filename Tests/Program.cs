@@ -1,4 +1,6 @@
 using SafeDialogueTools.Core;
+using SafeDialogueTools.Tests;
+using PixelCrushers.DialogueSystem;
 
 var failures = 0;
 var checks = 0;
@@ -21,6 +23,27 @@ var root = Path.Combine(Path.GetTempPath(), "SafeDialogueTools-tests-" + Guid.Ne
 Directory.CreateDirectory(root);
 try
 {
+    Test("first rendered craft option shows its check before selection", () =>
+    {
+        var button = new StandardUIResponseButton();
+        IndicatorHarness.Render(button, IndicatorHarness.CraftOption());
+        Require(button.text.StartsWith("3.") && button.text.Contains("✗ 巧艺 10 ≥ 20"), button.text);
+    });
+    Test("reused response button cannot preview the previous option", () =>
+    {
+        var button = new StandardUIResponseButton
+        {
+            response = new Response { destinationEntry = new DialogueEntry { conditionsString = "IsPlayerPro('感知','大于等于',5)" } }
+        };
+        IndicatorHarness.Render(button, IndicatorHarness.CraftOption());
+        Require(button.text.Contains("✗ 巧艺 10 ≥ 20") && !button.text.Contains("感知"), button.text);
+    });
+    Test("ordinary option stays unmarked when a checked button is reused", () =>
+    {
+        var button = new StandardUIResponseButton { response = IndicatorHarness.CraftOption() };
+        IndicatorHarness.Render(button, new Response { formattedText = new FormattedText { text = "离开" } });
+        Require(button.text == "3.离开", button.text);
+    });
     Test("new store has no implicit read target", () => Require(new CheckpointStore(root, "v1").Selected() is null));
     var store = new CheckpointStore(root, "v1");
     string Create() => store.Create(path => File.WriteAllText(Path.Combine(path, "save.es3"), "complete-save"), path =>
