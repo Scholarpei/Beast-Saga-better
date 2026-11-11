@@ -542,6 +542,62 @@ try
         Require(SafetyPolicy.Route(true, true, false, 1) == LoadRoute.Isolated));
     Test("ordinary native loads remain unchanged", () =>
         Require(SafetyPolicy.Route(false, false, false, 2) == LoadRoute.Original));
+    Test("home toggles only while the game is focused and no field accepts text", () =>
+    {
+        CommandPanelState.Open = false;
+        CommandPanelState.ToggleHome(true, false);
+        Require(CommandPanelState.Open);
+        CommandPanelState.ToggleHome(true, false);
+        Require(!CommandPanelState.Open);
+        CommandPanelState.ToggleHome(true, true);
+        Require(!CommandPanelState.Open);
+        CommandPanelState.ToggleHome(false, false);
+        Require(!CommandPanelState.Open);
+    });
+    Test("panel state distinguishes restricted, available and faulted tools", () =>
+    {
+        var restricted = new CommandPanelState.State(false, false, false, false, false, true, false, null, null, null);
+        Require(restricted.Status == "存读档受限" && !restricted.CanSave && !restricted.CanLoad);
+        var ready = new CommandPanelState.State(true, false, false, false, false, true, true, "checkpoint", "selected", null);
+        Require(ready.Status == "存读档可用" && ready.Mode == "隔离副本" && ready.CanSave && ready.CanLoad);
+        Require(ready.DialogueCheckpointText == "已建立" && ready.SelectedCheckpointText == "selected" && ready.BlockedText == "安全检查通过");
+        var busy = ready with { Busy = true };
+        Require(busy.BlockedText == "正在存读档" && !busy.CanSave && !busy.CanLoad);
+        var faulted = ready with { Faulted = true };
+        Require(faulted.Status == "插件异常" && !faulted.CanSave && !faulted.CanLoad && faulted.BlockedText.Contains("停用"));
+        var dialogueReady = ready with { Dialogue = true, DialogueCheckpoint = "before-conversation" };
+        Require(dialogueReady.CanSave && dialogueReady.CanLoad);
+        var dialogueWithoutCheckpoint = dialogueReady with { DialogueCheckpoint = null };
+        Require(!dialogueWithoutCheckpoint.CanSave && dialogueWithoutCheckpoint.DialogueCheckpointText == "未建立");
+    });
+    Test("panel actions reuse safe save and load commands", () =>
+    {
+        var calls = new List<string>();
+        var actions = new CommandPanelState.Actions(() => calls.Add("save"), () => calls.Add("load"));
+        var ready = new CommandPanelState.State(true, false, false, false, false, true, true, "checkpoint", "selected", null);
+        CommandPanelState.RunSave(ready, actions);
+        CommandPanelState.RunLoad(ready, actions);
+        Require(calls.SequenceEqual(new[] { "save", "load" }), string.Join(",", calls));
+        calls.Clear();
+        var busy = ready with { Busy = true };
+        CommandPanelState.RunSave(busy, actions);
+        CommandPanelState.RunLoad(busy, actions);
+        var dialogue = ready with { Dialogue = true, DialogueCheckpoint = null };
+        CommandPanelState.RunSave(dialogue, actions);
+        Require(calls.Count == 0, string.Join(",", calls));
+    });
+    Test("panel layout stays centered and inside narrow screens", () =>
+    {
+        var layout = CommandPanelLayout.Create(1920, 1080);
+        Require(layout.Width == 430 && layout.X >= 100 && layout.Y > 0, $"{layout.X},{layout.Y},{layout.Width}");
+        Require(layout.X + layout.Width <= 1920 && layout.Y + layout.Height <= 1080);
+        var narrow = CommandPanelLayout.Create(800, 600);
+        Require(narrow.Width >= 320 && narrow.X >= 16 && narrow.Y >= 8, $"{narrow.X},{narrow.Y},{narrow.Width}");
+        Require(narrow.X + narrow.Width <= 800 && narrow.Y + narrow.Height <= 600);
+        var tiny = CommandPanelLayout.Create(320, 480);
+        Require(tiny.X >= 0 && tiny.Y >= 0 && tiny.X + tiny.Width <= 320 && tiny.Y + tiny.Height <= 480,
+            $"{tiny.X},{tiny.Y},{tiny.Width},{tiny.Height}");
+    });
     Test("single-check parser rejects script suffixes", () =>
         Require(CheckPreview.Parse("IsPlayerPro('感知','大于等于',15); AwardExp(100)") is null));
     Test("pruning retains five latest saves and an older selected save", () =>

@@ -21,6 +21,7 @@ public sealed class Plugin : BasePlugin
     internal static ConfigEntry<bool> EnableIndicators = null!;
     internal static ConfigEntry<KeyCode> SaveKey = null!;
     internal static ConfigEntry<KeyCode> LoadKey = null!;
+    internal static ConfigEntry<KeyCode> PanelKey = null!;
     internal static CheckpointStore Store = null!;
     internal static string GameRoot = "";
     internal static string DataRoot = "";
@@ -40,6 +41,7 @@ public sealed class Plugin : BasePlugin
     internal static bool PendingNativeLoad;
     internal static bool NativeLoadCompleted;
     internal static int GuiFrames;
+    internal static string? PanelSelectedCheckpoint;
     internal const string KnownFingerprint = "B12412BC21B0B88A07851D15235736AFCFCE48A22AB8D3F1CB3DFB8376360359";
     internal const string ProductionAuthorizationFile = "SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED";
     internal static bool CheckpointsActive => SafetyPolicy.CanOperate(
@@ -64,6 +66,7 @@ public sealed class Plugin : BasePlugin
         EnableIndicators = Config.Bind("General", "EnableIndicators", true, "显示只读判定提示；未知条件不推测结果。");
         SaveKey = Config.Bind("Keys", "QuickSave", KeyCode.F5, "快存；对话中选择对话前检查点。");
         LoadKey = Config.Bind("Keys", "QuickLoad", KeyCode.F6, "读取已明确选定的检查点。");
+        PanelKey = Config.Bind("Keys", "Panel", KeyCode.Home, "显示或隐藏快速工具面板。");
         Fingerprint = ComputeFingerprint(GameRoot);
         if (Fingerprint != KnownFingerprint)
         {
@@ -96,6 +99,21 @@ public sealed class Plugin : BasePlugin
     }
 
     internal static bool IsDialogue => DialogueManager.hasInstance && DialogueManager.isConversationActive;
+
+    internal static void RefreshPanelSelectedCheckpoint()
+    {
+        if (!CheckpointsActive || Store == null || Faulted)
+        {
+            PanelSelectedCheckpoint = null;
+            return;
+        }
+        try { PanelSelectedCheckpoint = Store.Selected(); }
+        catch (Exception error)
+        {
+            PanelSelectedCheckpoint = null;
+            Logger.LogMessage("面板无法读取检查点：" + error.Message);
+        }
+    }
 
     internal static string? UnsafeReason(bool permitDialogue)
     {
@@ -220,6 +238,13 @@ public sealed class Plugin : BasePlugin
         Logger.LogError(error);
         Tip(message);
     }
+
+    internal static CommandPanelState.State PanelState()
+    {
+        return new CommandPanelState.State(
+            CheckpointsActive, IsDialogue, Busy, Loading, Faulted, EnableIndicators.Value, TestMode,
+            DialogueCheckpoint, PanelSelectedCheckpoint, UnsafeReason(IsDialogue));
+    }
 }
 
 [HarmonyPatch(typeof(SaveManager), nameof(SaveManager.SelectQuickGame))]
@@ -259,6 +284,23 @@ public sealed class RuntimeDriver : MonoBehaviour
     private GUIStyle? futureTitleStyle;
     private GUIStyle? connectorStyle;
     private Dictionary<FuturePreviewKind, GUIStyle>? futureStyles;
+    private GUIStyle? panelTitleStyle;
+    private GUIStyle? panelSubtitleStyle;
+    private GUIStyle? panelSectionStyle;
+    private GUIStyle? panelLabelStyle;
+    private GUIStyle? panelValueStyle;
+    private GUIStyle? panelButtonStyle;
+    private GUIStyle? panelDisabledButtonStyle;
+    private GUIStyle? panelToggleStyle;
+    private GUIStyle? panelSurfaceStyle;
+    private GUIStyle? panelCardStyle;
+    private GUIStyle? panelLineStyle;
+    private GUIStyle? panelDotStyle;
+    private Texture2D? panelSurface;
+    private Texture2D? panelCard;
+    private Texture2D? panelLine;
+    private Texture2D? panelButton;
+    private GUIStyle? panelButtonHover;
 
     public RuntimeDriver(IntPtr pointer) : base(pointer) { }
 
@@ -267,18 +309,31 @@ public sealed class RuntimeDriver : MonoBehaviour
         try
         {
             Plugin.Tick();
-            if (!Plugin.CheckpointsActive || !Application.isFocused) return;
+            var panel = Input.GetKeyDown(Plugin.PanelKey.Value);
+            var save = Plugin.CheckpointsActive && Input.GetKeyDown(Plugin.SaveKey.Value);
+            var load = Plugin.CheckpointsActive && Input.GetKeyDown(Plugin.LoadKey.Value);
+            if (!Application.isFocused) return;
             if (UnityEngine.EventSystems.EventSystem.current != null)
             {
                 var selected = UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject;
                 if (selected != null && (selected.GetComponent<UnityEngine.UI.InputField>() != null || selected.GetComponent<TMPro.TMP_InputField>() != null)) return;
             }
             if (FairyGUI.Stage.inst != null && FairyGUI.Stage.inst.focus != null && FairyGUI.Stage.inst.focus.TryCast<FairyGUI.InputTextField>() != null) return;
-            var save = Input.GetKeyDown(Plugin.SaveKey.Value);
-            var load = Input.GetKeyDown(Plugin.LoadKey.Value);
-            if ((!save && !load) || Time.realtimeSinceStartup - Plugin.LastInput < 0.35f) return;
+            if (panel && !save && !load && Time.realtimeSinceStartup - Plugin.LastInput >= 0.35f)
+            {
+                Plugin.LastInput = Time.realtimeSinceStartup;
+                CommandPanelState.ToggleHome(true, false);
+                if (CommandPanelState.Open) Plugin.RefreshPanelSelectedCheckpoint();
+                return;
+            }
+            if (!panel && ((save && !load) || (load && !save)) && Time.realtimeSinceStartup - Plugin.LastInput < 0.35f) return;
+            if (panel || !save && !load) return;
             Plugin.LastInput = Time.realtimeSinceStartup;
-            if (save && !load) Plugin.SavePressed();
+            if (save && !load)
+            {
+                Plugin.SavePressed();
+                if (CommandPanelState.Open) Plugin.RefreshPanelSelectedCheckpoint();
+            }
             else if (load && !save) Plugin.LoadPressed();
         }
         catch (Exception error) { Plugin.Fail("插件操作已中止", error, true); }
@@ -290,6 +345,8 @@ public sealed class RuntimeDriver : MonoBehaviour
         if (Time.realtimeSinceStartup <= Plugin.NoticeUntil && !string.IsNullOrEmpty(Plugin.Notice))
             DrawMessage(new Rect(Screen.width * 0.2f, 24, Screen.width * 0.6f, 46), Plugin.Notice);
         RuntimeDriver.ClearStaleHover(Indicators.HoveredButton);
+        if (CommandPanelState.Open)
+            DrawCommandPanel();
         if (Plugin.EnableIndicators.Value && Plugin.IsDialogue && Indicators.HoveredButton != null && !string.IsNullOrEmpty(Indicators.HoverHint))
             DrawFutureWindow();
     }
@@ -304,6 +361,99 @@ public sealed class RuntimeDriver : MonoBehaviour
         messageStyle.fontSize = Math.Clamp((int)(Screen.height / 50f), 18, 28);
         GUI.Box(bounds, "");
         GUI.Label(bounds, message, messageStyle);
+    }
+
+    private void DrawCommandPanel()
+    {
+        var state = Plugin.PanelState();
+        var layout = CommandPanelLayout.Create(Screen.width, Screen.height);
+        var bounds = new Rect(layout.X, layout.Y, layout.Width, layout.Height);
+        EnsurePanelStyles();
+        GUI.Box(bounds, GUIContent.none, panelSurfaceStyle!);
+        GUI.Box(new Rect(bounds.x, bounds.y, bounds.width, 1), GUIContent.none, panelLineStyle!);
+        GUI.Box(new Rect(bounds.x + 13, bounds.y + 10, bounds.width - 26, 74), GUIContent.none, panelCardStyle!);
+        GUI.Box(new Rect(bounds.x + 20, bounds.y + 90, bounds.width - 40, 160), GUIContent.none, panelCardStyle!);
+        GUI.Label(new Rect(bounds.x + 29, bounds.y + 24, 190, 26), "Safe Dialogue Tools", panelTitleStyle);
+        GUI.Label(new Rect(bounds.x + 29, bounds.y + 52, 220, 20), "对话安全与预测工具", panelSubtitleStyle);
+        DrawStatusDot(new Rect(bounds.xMax - 37, bounds.y + 26, 11, 11), state);
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 96, 200, 20), "状态", panelSectionStyle);
+        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 124, bounds.width - 40, 24), "运行模式", state.Mode, 70);
+        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 152, bounds.width - 40, 24), "对话前", state.DialogueCheckpointText, 70);
+        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 180, bounds.width - 40, 24), "读取目标", state.SelectedCheckpointText, 70);
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 212, bounds.width - 40, 38), state.BlockedText, panelValueStyle);
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 254, 200, 20), "快速操作", panelSectionStyle);
+        var actionBounds = new Rect(bounds.x + 20, bounds.y + 282, bounds.width - 40, 42);
+        var saveBounds = new Rect(actionBounds.x, actionBounds.y, actionBounds.width, 42);
+        if (DrawActionButton(saveBounds, "快速保存（F5）", state.CanSave, panelButtonStyle!, panelButtonHover!, panelDisabledButtonStyle!))
+        {
+            CommandPanelState.RunSave(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
+            Plugin.RefreshPanelSelectedCheckpoint();
+        }
+        var loadBounds = new Rect(actionBounds.x, actionBounds.y + 50, actionBounds.width, 42);
+        if (DrawActionButton(loadBounds, "读取检查点（F6）", state.CanLoad, panelButtonStyle!, panelButtonHover!, panelDisabledButtonStyle!))
+            CommandPanelState.RunLoad(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 386, 200, 20), "辅助", panelSectionStyle);
+        var toggleBounds = new Rect(bounds.x + 20, bounds.y + 414, bounds.width - 40, 36);
+        GUI.Box(toggleBounds, GUIContent.none, panelCardStyle!);
+        var enabled = GUI.Toggle(new Rect(toggleBounds.x + 14, toggleBounds.y + 7, toggleBounds.width - 28, 22),
+            state.IndicatorsEnabled, "悬停显示判定与未来预览", panelToggleStyle);
+        if (enabled != state.IndicatorsEnabled) Plugin.EnableIndicators.Value = enabled;
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + bounds.height - 34, bounds.width - 40, 20),
+            $"{Plugin.PanelKey.Value} 收起 · {Plugin.SaveKey.Value} 快存 · {Plugin.LoadKey.Value} 读取", panelSubtitleStyle);
+    }
+
+    private void DrawInfoRow(Rect bounds, string label, string value, float labelWidth)
+    {
+        GUI.Label(new Rect(bounds.x, bounds.y, labelWidth, bounds.height), label, panelValueStyle);
+        GUI.Label(new Rect(bounds.x + labelWidth, bounds.y, bounds.width - labelWidth, bounds.height), value, panelValueStyle);
+    }
+
+    private bool DrawActionButton(Rect bounds, string text, bool enabled, GUIStyle normal, GUIStyle hover, GUIStyle disabled)
+    {
+        var style = !enabled ? disabled : bounds.Contains(Event.current.mousePosition) ? hover : normal;
+        return enabled && GUI.Button(bounds, text, style);
+    }
+
+    private void DrawStatusDot(Rect bounds, CommandPanelState.State state)
+    {
+        var color = state.Faulted ? new Color32(255, 111, 97, 255)
+            : state.CheckpointsActive ? new Color32(95, 238, 178, 255)
+            : new Color32(255, 196, 84, 255);
+        var old = GUI.color;
+        GUI.color = color;
+        GUI.Box(bounds, GUIContent.none, panelDotStyle!);
+        GUI.color = old;
+    }
+
+    private static Texture2D CreateTexture(Color32 color)
+    {
+        var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+        texture.SetPixel(0, 0, color);
+        texture.Apply();
+        return texture;
+    }
+
+    private void EnsurePanelStyles()
+    {
+        if (panelTitleStyle != null) return;
+        panelSurface = CreateTexture(new Color32(10, 15, 24, 236));
+        panelCard = CreateTexture(new Color32(26, 36, 51, 72));
+        panelLine = CreateTexture(new Color32(93, 182, 197, 120));
+        panelButton = CreateTexture(new Color32(23, 34, 48, 210));
+        var buttonHoverTexture = CreateTexture(new Color32(37, 56, 75, 235));
+        panelTitleStyle = new GUIStyle { normal = { textColor = new Color32(235, 243, 255, 255) }, fontSize = 19, fontStyle = FontStyle.Bold };
+        panelSubtitleStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = 12 };
+        panelSectionStyle = new GUIStyle { normal = { textColor = new Color32(134, 217, 229, 255) }, fontSize = 12, fontStyle = FontStyle.Bold };
+        panelLabelStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = 12 };
+        panelValueStyle = new GUIStyle { normal = { textColor = new Color32(212, 226, 241, 255) }, fontSize = 13, wordWrap = true };
+        panelButtonStyle = new GUIStyle(panelLabelStyle) { normal = { background = panelButton, textColor = new Color32(229, 241, 255, 255) }, alignment = TextAnchor.MiddleCenter, fontSize = 14 };
+        panelButtonHover = new GUIStyle(panelButtonStyle) { normal = { background = buttonHoverTexture } };
+        panelDisabledButtonStyle = new GUIStyle(panelButtonStyle) { normal = { background = panelButton, textColor = new Color32(110, 122, 138, 255) } };
+        panelToggleStyle = new GUIStyle(panelValueStyle) { fontSize = 13 };
+        panelSurfaceStyle = new GUIStyle { normal = { background = panelSurface } };
+        panelCardStyle = new GUIStyle { normal = { background = panelCard } };
+        panelLineStyle = new GUIStyle { normal = { background = panelLine } };
+        panelDotStyle = new GUIStyle { normal = { background = Texture2D.whiteTexture } };
     }
 
     private void DrawFutureWindow()
