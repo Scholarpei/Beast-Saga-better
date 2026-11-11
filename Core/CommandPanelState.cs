@@ -4,6 +4,7 @@ public static class CommandPanelState
 {
     public static bool Open { get; set; }
     public static CommandPanelTab Tab { get; private set; } = CommandPanelTab.Status;
+    public static CheatSection CheatSection { get; private set; } = CheatSectionCatalog.Default;
     private static (float X, float Y, float Width, float Height) pointerBounds;
 
     public sealed record State(
@@ -90,6 +91,11 @@ public static class CommandPanelState
         Tab = tab;
     }
 
+    public static void SelectCheatSection(CheatSection section)
+    {
+        if (CheatSectionCatalog.IsAvailable(section)) CheatSection = section;
+    }
+
     public static void Close()
     {
         Open = false;
@@ -100,6 +106,7 @@ public static class CommandPanelState
     {
         Close();
         Tab = CommandPanelTab.Status;
+        CheatSection = CheatSectionCatalog.Default;
     }
 
     public static void SetPointerBounds(float x, float y, float width, float height) =>
@@ -214,7 +221,7 @@ public readonly record struct CommandPanelMetrics(
 {
     public static CommandPanelMetrics Create(CommandPanelLayout layout)
     {
-        var scale = Math.Clamp(layout.Height / 720f, 0.72f, 1.35f);
+        var scale = Math.Clamp(layout.Height / 720f, 0.72f, 3f);
         return new(
             scale,
             Math.Clamp(layout.Width * 0.26f, 280f, Math.Min(760f, layout.Width * 0.38f)),

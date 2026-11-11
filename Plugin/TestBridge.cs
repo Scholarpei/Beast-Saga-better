@@ -22,13 +22,30 @@ internal static class TestBridge
         try
         {
             if (command == "state") Snapshot();
-            else if (command == "menu-continue") LJG.Framework.Main.m_UI.GetOpenedUI<LoginUILogicResident>().OnContinueGame();
+            else if (command == "menu-continue")
+            {
+                var login = LJG.Framework.Main.m_UI.GetOpenedUI<LoginUILogicResident>();
+                if (login == null) throw new InvalidOperationException("登录界面尚未打开");
+                login.OnContinueGame();
+            }
             else if (command == "save") Plugin.SavePressed();
             else if (command == "load") Plugin.LoadPressed();
             else if (command == "enable") Plugin.EnableCheckpoints.Value = true;
             else if (command == "panel")
             {
                 Plugin.TogglePanel();
+            }
+            else if (command.StartsWith("panel-tab|"))
+            {
+                if (!Enum.TryParse<CommandPanelTab>(command[10..], true, out var tab))
+                    throw new InvalidOperationException("Invalid panel tab");
+                CommandPanelState.SelectTab(tab);
+            }
+            else if (command.StartsWith("cheat-section|"))
+            {
+                if (!Enum.TryParse<CheatSection>(command[14..], true, out var section))
+                    throw new InvalidOperationException("Invalid cheat section");
+                CommandPanelState.SelectCheatSection(section);
             }
             else if (command.StartsWith("note:"))
             {
@@ -85,6 +102,16 @@ internal static class TestBridge
             else if (command == "quit") Application.Quit();
             else if (command == "dump-db") DumpDatabase();
             else if (command == "capture") ScreenCapture.CaptureScreenshot(Path.Combine(Plugin.GameRoot, "test-frame.png"));
+            else if (command == "cheat-state") WriteCheatState();
+            else if (command == "cheat-probe") WriteCheatProbe();
+            else if (command.StartsWith("cheat-set-stat|")) RunCheatSetStat(command);
+            else if (command.StartsWith("cheat-set-martial|")) RunCheatSetMartial(command);
+            else if (command.StartsWith("cheat-set-life|")) RunCheatSetLife(command);
+            else if (command.StartsWith("cheat-add-favor|")) RunCheatAddFavor(command);
+            else if (command.StartsWith("cheat-add-exp|")) RunCheatAddExp(command);
+            else if (command.StartsWith("cheat-add-points|")) RunCheatAddPoints(command);
+            else if (command.StartsWith("cheat-set-points|")) RunCheatSetPoints(command);
+            else if (command.StartsWith("cheat-speed|")) RunCheatSpeed(command);
             else if (command.StartsWith("snapshot:"))
             {
                 var name = command[9..];
@@ -111,6 +138,172 @@ internal static class TestBridge
             Plugin.Logger.LogError(error);
             File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-result.txt"), error.ToString());
         }
+    }
+
+    private static CheatCharacterOption FindCheatCharacter(string key) =>
+        CheatEditor.Characters().FirstOrDefault(item => item.Key == key)
+        ?? throw new InvalidOperationException("Unknown cheat character: " + key);
+
+    private static string[] CheatParts(string command, int count)
+    {
+        var parts = command.Split('|');
+        if (parts.Length != count + 1) throw new InvalidOperationException("Invalid cheat command: " + command);
+        return parts;
+    }
+
+    private static void WriteCheatResult(bool ok, string message)
+    {
+        File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-cheat-result.json"),
+            JsonSerializer.Serialize(new { ok, message }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static void RunCheatSetStat(string command)
+    {
+        var parts = CheatParts(command, 3);
+        if (!int.TryParse(parts[2], out var type) || !int.TryParse(parts[3], out var value))
+            throw new InvalidOperationException("Invalid stat command");
+        var ok = CheatEditor.SetStat(FindCheatCharacter(parts[1]), (PlayerProType)type, value, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void RunCheatSetMartial(string command)
+    {
+        var parts = CheatParts(command, 3);
+        if (!int.TryParse(parts[2], out var type) || !int.TryParse(parts[3], out var level))
+            throw new InvalidOperationException("Invalid martial command");
+        var ok = CheatEditor.SetMartial(FindCheatCharacter(parts[1]), (KFType)type, level, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void RunCheatSetLife(string command)
+    {
+        var parts = CheatParts(command, 3);
+        if (!int.TryParse(parts[2], out var type) || !int.TryParse(parts[3], out var level))
+            throw new InvalidOperationException("Invalid life command");
+        var ok = CheatEditor.SetLife(FindCheatCharacter(parts[1]), (LifeType)type, level, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void RunCheatAddFavor(string command)
+    {
+        var parts = CheatParts(command, 2);
+        if (!float.TryParse(parts[2], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var delta))
+            throw new InvalidOperationException("Invalid favor command");
+        var ok = CheatEditor.AddFavor(FindCheatCharacter(parts[1]), delta, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void RunCheatAddExp(string command)
+    {
+        var parts = CheatParts(command, 1);
+        if (!int.TryParse(parts[1], out var amount)) throw new InvalidOperationException("Invalid exp command");
+        var ok = CheatEditor.AddPlayerExp(amount, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void RunCheatAddPoints(string command)
+    {
+        var parts = CheatParts(command, 2);
+        if (!Enum.TryParse<CheatPointPool>(parts[1], true, out var pool) || !int.TryParse(parts[2], out var delta))
+            throw new InvalidOperationException("Invalid points command");
+        var ok = CheatEditor.AddPoints(pool, delta, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void RunCheatSetPoints(string command)
+    {
+        var parts = CheatParts(command, 2);
+        if (!Enum.TryParse<CheatPointPool>(parts[1], true, out var pool) || !int.TryParse(parts[2], out var available))
+            throw new InvalidOperationException("Invalid set-points command");
+        var ok = CheatEditor.SetAvailablePoints(pool, available, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void RunCheatSpeed(string command)
+    {
+        var parts = CheatParts(command, 1);
+        if (!float.TryParse(parts[1], System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var multiplier))
+            throw new InvalidOperationException("Invalid speed command");
+        var ok = CheatEditor.SetMovementSpeed(multiplier, out var message);
+        WriteCheatResult(ok, message);
+    }
+
+    private static void WriteCheatState()
+    {
+        var characters = CheatEditor.Characters().Select(option =>
+        {
+            var snapshot = CheatEditor.Snapshot(option);
+            return new
+            {
+                option.Key,
+                option.Name,
+                Kind = option.Kind.ToString(),
+                CanEditStats = option.CanEditStats,
+                snapshot.Level,
+                snapshot.Exp,
+                snapshot.HasFavor,
+                snapshot.Favor,
+                Stats = CheatEditor.AttributeTypes.Select((type, index) => new
+                {
+                    type.Value,
+                    type.Label,
+                    Base = snapshot.BaseStats[index],
+                    Final = snapshot.FinalStats[index]
+                }).ToArray(),
+                Martial = CheatEditor.MartialTypes.Select((type, index) => new
+                {
+                    type.Value,
+                    type.Label,
+                    Level = snapshot.MartialLevels[index]
+                }).ToArray(),
+                Life = CheatEditor.LifeTypes.Select((type, index) => new
+                {
+                    type.Value,
+                    type.Label,
+                    Level = snapshot.LifeLevels[index]
+                }).ToArray()
+            };
+        }).ToArray();
+        var points = CheatEditor.Points();
+        File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-cheat-state.json"),
+            JsonSerializer.Serialize(new
+            {
+                BlockReason = CheatEditor.EditBlockReason(),
+                Characters = characters,
+                Points = points,
+                Speed = CheatEditor.MovementSpeed(),
+                FishingInstantSuccess = Plugin.EnableFishingInstantSuccess.Value
+            }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static void WriteCheatProbe()
+    {
+        var manager = PlayerDataManager._Instance;
+        var player = manager?._PlayerData;
+        var probes = player == null
+            ? Array.Empty<object>()
+            : Enumerable.Range(1, 8).Select(type => new
+            {
+                Type = type,
+                Pro = manager!.GetPro((PlayerProType)type)
+            }).Cast<object>().ToArray();
+        File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-cheat-probe.json"),
+            JsonSerializer.Serialize(new
+            {
+                Player = player == null ? null : new
+                {
+                    player.Power,
+                    player.Perception,
+                    player.Agility,
+                    player.PhysicalPower,
+                    player.Channel,
+                    player.BerathSkill,
+                    player.WuXing
+                },
+                Probes = probes
+            }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     private static void Snapshot()

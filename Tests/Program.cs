@@ -722,6 +722,85 @@ try
         CommandPanelState.RunSave(dialogue, actions);
         Require(calls.Count == 0, string.Join(",", calls));
     });
+    Test("cheat categories match the agreed object-oriented layout", () =>
+    {
+        var sections = CheatSectionCatalog.All;
+        Require(sections.Select(item => item.Section).SequenceEqual(new[]
+        {
+            CheatSection.Character, CheatSection.Points, CheatSection.Items,
+            CheatSection.Combat, CheatSection.World, CheatSection.Other
+        }));
+        Require(sections.Select(item => item.Label).SequenceEqual(new[]
+        {
+            "角色属性", "点数", "物品", "战斗", "世界", "其他"
+        }));
+        Require(CheatSectionCatalog.Default == CheatSection.Character);
+        Require(CheatSectionCatalog.IsAvailable(CheatSection.Character));
+        Require(CheatSectionCatalog.IsAvailable(CheatSection.Points));
+        Require(!CheatSectionCatalog.IsAvailable(CheatSection.Items));
+        Require(!CheatSectionCatalog.IsAvailable(CheatSection.Combat));
+        Require(!CheatSectionCatalog.IsAvailable(CheatSection.World));
+        Require(CheatSectionCatalog.IsAvailable(CheatSection.Other));
+    });
+    Test("cheat category selection ignores unavailable sections and resets", () =>
+    {
+        CommandPanelState.Reset();
+        Require(CommandPanelState.CheatSection == CheatSection.Character);
+        CommandPanelState.SelectCheatSection(CheatSection.Points);
+        Require(CommandPanelState.CheatSection == CheatSection.Points);
+        CommandPanelState.SelectCheatSection(CheatSection.Items);
+        Require(CommandPanelState.CheatSection == CheatSection.Points);
+        CommandPanelState.SelectCheatSection(CheatSection.Other);
+        Require(CommandPanelState.CheatSection == CheatSection.Other);
+        CommandPanelState.Reset();
+        Require(CommandPanelState.CheatSection == CheatSection.Character);
+    });
+    Test("available points never go negative", () =>
+    {
+        Require(CheatMath.Available(10, 4) == 6);
+        Require(CheatMath.Available(4, 10) == 0);
+        Require(CheatMath.Available(-1, 0) == 0);
+    });
+    Test("adding points preserves already used points", () =>
+    {
+        Require(CheatMath.AddPoints(10, 4, 3) == 13);
+        Require(CheatMath.AddPoints(10, 10, -5) == 10);
+        Require(CheatMath.AddPoints(3, 10, 0) == 10);
+        Require(CheatMath.SetAvailable(4, 7) == 11);
+        Require(CheatMath.SetAvailable(4, -1) == 4);
+    });
+    Test("favor edits clamp at zero and keep fractions", () =>
+    {
+        Require(CheatMath.AdjustFavor(5f, -10f) == 0f);
+        Require(CheatMath.AdjustFavor(5.5f, 2.25f) == 7.75f);
+        Require(CheatMath.AdjustFavor(0f, 1f) == 1f);
+    });
+    Test("level and stat edits are bounded", () =>
+    {
+        Require(CheatMath.ClampLevel(0) == 1);
+        Require(CheatMath.ClampLevel(100000) == 9999);
+        Require(CheatMath.ClampLevel(12) == 12);
+        Require(CheatMath.ClampStat(-1) == 0);
+        Require(CheatMath.ClampStat(100000) == 9999);
+    });
+    Test("cheat edit policy names the blocking game state", () =>
+    {
+        string? Reason(bool faulted = false, bool busy = false, bool loading = false, bool saveReady = true,
+            bool saving = false, bool battle = false, bool map = false, bool dialogue = false,
+            bool canMove = true, bool sequence = false) =>
+            CheatEditPolicy.BlockReason(faulted, busy, loading, saveReady, saving, battle, map, dialogue, canMove, sequence);
+        Require(Reason() == null);
+        Require(Reason(faulted: true)!.Contains("停用修改"));
+        Require(Reason(busy: true) == "正在存读档");
+        Require(Reason(loading: true) == "正在存读档");
+        Require(Reason(saveReady: false) == "游戏尚未准备好");
+        Require(Reason(saving: true) == "原生存档正在写入");
+        Require(Reason(battle: true) == "战斗或结算期间不可修改");
+        Require(Reason(map: true) == "地图正在切换或清理");
+        Require(Reason(dialogue: true) == "正在对话");
+        Require(Reason(canMove: false) == "玩家控制尚未恢复");
+        Require(Reason(sequence: true) == "剧情演出正在执行");
+    });
     Test("panel layout fills the whole screen", () =>
     {
         var layout = CommandPanelLayout.Create(1920, 1080);
@@ -763,6 +842,9 @@ try
     var history = CheckpointHistoryTests.Run();
     checks += history.Checks;
     failures += history.Failures;
+    var cheatFeatures = CheatFeatureTests.Run();
+    checks += cheatFeatures.Checks;
+    failures += cheatFeatures.Failures;
 }
 finally
 {

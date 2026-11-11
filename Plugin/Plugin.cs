@@ -14,7 +14,7 @@ using UnityEngine;
 namespace SafeDialogueTools;
 
 [BepInPlugin("beastsaga.safedialoguetools", "SafeDialogueTools", "0.1.0")]
-public sealed class Plugin : BasePlugin
+public sealed partial class Plugin : BasePlugin
 {
     internal static Plugin Current = null!;
     internal static ManualLogSource Logger = null!;
@@ -472,7 +472,7 @@ internal static class IsolatedLoadPatch
     }
 }
 
-public sealed class RuntimeDriver : MonoBehaviour
+public sealed partial class RuntimeDriver : MonoBehaviour
 {
     private GUIStyle? messageStyle;
     private GUIStyle? futureStyle;
@@ -481,6 +481,9 @@ public sealed class RuntimeDriver : MonoBehaviour
     private Dictionary<FuturePreviewKind, GUIStyle>? futureStyles;
     private GUIStyle? panelTitleStyle;
     private GUIStyle? panelSubtitleStyle;
+    private GUIStyle? panelWrappedSubtitleStyle;
+    private GUIStyle? panelHeaderStatusStyle;
+    private GUIStyle? panelHeaderButtonStyle;
     private GUIStyle? panelSectionStyle;
     private GUIStyle? panelLabelStyle;
     private GUIStyle? panelValueStyle;
@@ -512,6 +515,9 @@ public sealed class RuntimeDriver : MonoBehaviour
     private GUIStyle? panelArchiveLineStyle;
     private GUIStyle? panelArchiveNoteStyle;
     private GUIStyle? panelNoteHighlightStyle;
+    private GUIStyle? panelSidebarStyle;
+    private GUIStyle? panelSidebarActiveStyle;
+    private GUIStyle? panelSidebarDisabledStyle;
     private Vector2 archiveScroll;
     private string? thumbnailGeneration;
     private Texture2D? thumbnailTexture;
@@ -537,6 +543,7 @@ public sealed class RuntimeDriver : MonoBehaviour
         if (panelArchiveRowTexture != null) UnityEngine.Object.Destroy(panelArchiveRowTexture);
         if (panelArchiveSelectedTexture != null) UnityEngine.Object.Destroy(panelArchiveSelectedTexture);
         if (panelNoteHighlightTexture != null) UnityEngine.Object.Destroy(panelNoteHighlightTexture);
+          DestroyCheatTextures();
     }
 
     private void OnApplicationQuit()
@@ -637,20 +644,38 @@ public sealed class RuntimeDriver : MonoBehaviour
         CommandPanelState.SetPointerBounds(bounds.x, bounds.y, bounds.width, bounds.height);
         GUI.Box(bounds, GUIContent.none, panelSurfaceStyle!);
         GUI.Box(new Rect(bounds.x, bounds.y, bounds.width, 1), GUIContent.none, panelLineStyle!);
-        var header = new Rect(bounds.x + 14, bounds.y + 12, bounds.width - 28, 78 * metrics.Scale);
+        var scale = metrics.Scale;
+        var outerPad = 14 * scale;
+        var header = new Rect(bounds.x + outerPad, bounds.y + 12 * scale, bounds.width - outerPad * 2, 78 * scale);
         GUI.Box(header, GUIContent.none, panelCardStyle!);
-        GUI.Label(new Rect(header.x + 18, header.y + 13, 320, 30), "Safe Dialogue Tools", panelTitleStyle);
-        GUI.Label(new Rect(header.x + 18, header.y + 46, 320, 22), "对话安全与预测工具", panelSubtitleStyle);
-        DrawStatusDot(new Rect(header.xMax - 38, header.y + 16, 12, 12), state);
-        if (GUI.Button(new Rect(header.xMax - 152, header.y + 10, 112, 30), "关闭面板", panelSmallButtonStyle!))
+        GUI.Label(new Rect(header.x + 18 * scale, header.y + 13 * scale, 320 * scale, 30 * scale),
+            "Safe Dialogue Tools", panelTitleStyle);
+        GUI.Label(new Rect(header.x + 18 * scale, header.y + 46 * scale, 320 * scale, 22 * scale),
+            "对话安全与预测工具", panelSubtitleStyle);
+        var closeWidth = 84 * scale;
+        var closeHeight = 30 * scale;
+        var closeRect = new Rect(header.xMax - 18 * scale - closeWidth,
+            header.y + (header.height - closeHeight) / 2, closeWidth, closeHeight);
+        var statusRight = closeRect.x - 14 * scale;
+        var statusText = state.Faulted || state.BlockedReason is not null
+            ? "安全检查未通过 · " + state.Mode
+            : "安全检查通过 · " + state.Mode;
+        var statusSize = panelSubtitleStyle!.CalcSize(new GUIContent(statusText));
+        var statusTextRect = new Rect(statusRight - statusSize.x, header.y, statusSize.x, header.height);
+        GUI.Label(statusTextRect, statusText, panelHeaderStatusStyle);
+        var dotSize = 10 * scale;
+        var dot = new Rect(statusTextRect.x - 16 * scale,
+            header.y + (header.height - dotSize) / 2, dotSize, dotSize);
+        DrawStatusDot(dot, state);
+        if (GUI.Button(closeRect, "关闭面板", panelHeaderButtonStyle!))
         {
             CommandPanelState.Open = false;
             Plugin.PanelNoteEditing = false;
         }
-        var tabHeight = Math.Max(34f, 38f * metrics.Scale);
-        var tabGap = 6f;
-        var tabWidth = (bounds.width - 28 - tabGap * 2) / 3f;
-        var statusTab = new Rect(bounds.x + 14, header.yMax + 12, tabWidth, tabHeight);
+        var tabHeight = 38 * scale;
+        var tabGap = 6 * scale;
+        var tabWidth = (bounds.width - outerPad * 2 - tabGap * 2) / 3f;
+        var statusTab = new Rect(bounds.x + outerPad, header.yMax + 12 * scale, tabWidth, tabHeight);
         var archiveTab = new Rect(statusTab.xMax + tabGap, statusTab.y, tabWidth, tabHeight);
         var cheatsTab = new Rect(archiveTab.xMax + tabGap, statusTab.y, tabWidth, tabHeight);
         if (GUI.Button(statusTab, "状态", CommandPanelState.Tab == CommandPanelTab.Status ? panelTabActiveStyle! : panelTabStyle!))
@@ -711,34 +736,6 @@ public sealed class RuntimeDriver : MonoBehaviour
     {
         GUI.Label(new Rect(bounds.x, bounds.y, labelWidth, bounds.height), label, panelValueStyle);
         GUI.Label(new Rect(bounds.x + labelWidth, bounds.y, bounds.width - labelWidth, bounds.height), value, panelValueStyle);
-    }
-
-    private void DrawCheatsTab(Rect bounds, CommandPanelState.State state)
-    {
-        var metrics = CommandPanelMetrics.Create(CommandPanelLayout.Create(Screen.width, Screen.height));
-        var scale = metrics.Scale;
-        var tabBottom = bounds.y + 12 + 78 * metrics.Scale + 12 + Math.Max(34f, 38f * metrics.Scale) + 16;
-        var contentBounds = new Rect(bounds.x + 20, tabBottom, bounds.width - 40, bounds.y + bounds.height - 50 - tabBottom);
-        GUI.Label(new Rect(contentBounds.x, contentBounds.y, 240, Math.Max(24f, 26f * scale)), "修改作弊", panelSectionStyle);
-        var card = new Rect(contentBounds.x, contentBounds.y + Math.Max(30f, 34f * scale), contentBounds.width,
-            Math.Max(94f, 104f * scale));
-        GUI.Box(card, GUIContent.none, panelCardStyle!);
-        var toggleBounds = new Rect(card.x + 18, card.y + 14, card.width - 36, Math.Max(28f, 32f * scale));
-        var enabled = GUI.Toggle(toggleBounds, state.FishingInstantSuccess, "钓鱼直接成功", panelToggleStyle);
-        if (enabled != state.FishingInstantSuccess)
-        {
-            Plugin.EnableFishingInstantSuccess.Value = enabled;
-            Plugin.Tip(enabled ? "钓鱼直接成功已开启" : "钓鱼直接成功已关闭");
-        }
-        GUI.Label(new Rect(card.xMax - Math.Max(90f, 110f * scale) - 18, card.y + 15,
-                Math.Max(90f, 110f * scale), 28),
-            enabled ? "已开启" : "已关闭", panelBadgeStyle);
-        GUI.Label(new Rect(card.x + 18, card.y + Math.Max(50f, 56f * scale), card.width - 36, Math.Max(30f, 36f * scale)),
-            "钓鱼开始后进度条自动拉满，并立即结算成功。", panelSubtitleStyle);
-        GUI.Label(new Rect(contentBounds.x, card.yMax + 22, contentBounds.width, 24),
-            "更多修改功能将在此页陆续加入。", panelSubtitleStyle);
-        GUI.Label(new Rect(bounds.x + 20, bounds.y + bounds.height - 34, bounds.width - 40, 20),
-            $"{Plugin.PanelCloseHint} · 修改作弊", panelSubtitleStyle);
     }
 
     private void DrawArchiveTab(Rect bounds, CommandPanelState.State state)
@@ -960,6 +957,9 @@ public sealed class RuntimeDriver : MonoBehaviour
         DestroyPanelTextures();
         panelTitleStyle = null;
         panelSubtitleStyle = null;
+        panelWrappedSubtitleStyle = null;
+        panelHeaderStatusStyle = null;
+        panelHeaderButtonStyle = null;
         panelSectionStyle = null;
         panelLabelStyle = null;
         panelValueStyle = null;
@@ -977,12 +977,15 @@ public sealed class RuntimeDriver : MonoBehaviour
         panelTextFieldStyle = null;
         panelSmallButtonStyle = null;
         panelToggleStyle = null;
+        panelSidebarStyle = null;
+        panelSidebarActiveStyle = null;
+        panelSidebarDisabledStyle = null;
         panelSurfaceStyle = null;
         panelCardStyle = null;
         panelLineStyle = null;
         panelDotStyle = null;
-        panelSurface = CreateTexture(new Color32(10, 15, 24, 236));
-        panelCard = CreateTexture(new Color32(26, 36, 51, 72));
+        panelSurface = CreateTexture(new Color32(10, 15, 24, 247));
+        panelCard = CreateTexture(new Color32(26, 36, 51, 168));
         panelLine = CreateTexture(new Color32(93, 182, 197, 120));
         panelButton = CreateTexture(new Color32(23, 34, 48, 210));
         panelButtonHoverTexture = CreateTexture(new Color32(37, 56, 75, 235));
@@ -994,6 +997,8 @@ public sealed class RuntimeDriver : MonoBehaviour
         var scale = CommandPanelMetrics.Create(CommandPanelLayout.Create(Screen.width, Screen.height)).Scale;
         panelTitleStyle = new GUIStyle { normal = { textColor = new Color32(235, 243, 255, 255) }, fontSize = Math.Max(20, (int)(25 * scale)), fontStyle = FontStyle.Bold };
         panelSubtitleStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = Math.Max(13, (int)(15 * scale)) };
+        panelWrappedSubtitleStyle = new GUIStyle(panelSubtitleStyle) { wordWrap = true };
+        panelHeaderStatusStyle = new GUIStyle(panelSubtitleStyle) { alignment = TextAnchor.MiddleRight };
         panelSectionStyle = new GUIStyle { normal = { textColor = new Color32(134, 217, 229, 255) }, fontSize = Math.Max(14, (int)(16 * scale)), fontStyle = FontStyle.Bold };
         panelLabelStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = Math.Max(13, (int)(15 * scale)) };
         panelValueStyle = new GUIStyle { normal = { textColor = new Color32(212, 226, 241, 255) }, fontSize = Math.Max(15, (int)(18 * scale)), wordWrap = true };
@@ -1015,7 +1020,21 @@ public sealed class RuntimeDriver : MonoBehaviour
         panelBadgeStyle = new GUIStyle(panelSubtitleStyle) { fontSize = Math.Max(12, (int)(14 * scale)), alignment = TextAnchor.UpperRight };
         panelTextFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = Math.Max(15, (int)(18 * scale)) };
         panelSmallButtonStyle = new GUIStyle(panelButtonStyle) { fontSize = Math.Max(14, (int)(16 * scale)) };
+        panelHeaderButtonStyle = new GUIStyle(panelButtonStyle) { fontSize = Math.Max(12, (int)(13 * scale)) };
         panelToggleStyle = new GUIStyle(panelValueStyle) { fontSize = Math.Max(14, (int)(17 * scale)) };
+        panelSidebarStyle = new GUIStyle(panelTabStyle)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            padding = new RectOffset(8, 8, 0, 0),
+            fontSize = Math.Max(17, (int)(18 * scale))
+        };
+        panelSidebarActiveStyle = new GUIStyle(panelTabActiveStyle)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            padding = new RectOffset(8, 8, 0, 0),
+            fontSize = Math.Max(17, (int)(18 * scale))
+        };
+        panelSidebarDisabledStyle = new GUIStyle(panelSidebarStyle) { normal = { background = panelButton, textColor = new Color32(110, 122, 138, 255) } };
         panelSurfaceStyle = new GUIStyle { normal = { background = panelSurface } };
         panelCardStyle = new GUIStyle { normal = { background = panelCard } };
         panelLineStyle = new GUIStyle { normal = { background = panelLine } };
