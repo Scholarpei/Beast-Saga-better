@@ -629,7 +629,7 @@ try
     Test("panel layout stays centered and inside narrow screens", () =>
     {
         var layout = CommandPanelLayout.Create(1920, 1080);
-        Require(layout.Width == 430 && layout.X >= 100 && layout.Y > 0, $"{layout.X},{layout.Y},{layout.Width}");
+        Require(layout.Width >= 620 && layout.X >= 100 && layout.Y > 0, $"{layout.X},{layout.Y},{layout.Width}");
         Require(layout.X + layout.Width <= 1920 && layout.Y + layout.Height <= 1080);
         var narrow = CommandPanelLayout.Create(800, 600);
         Require(narrow.Width >= 320 && narrow.X >= 16 && narrow.Y >= 8, $"{narrow.X},{narrow.Y},{narrow.Width}");
@@ -651,6 +651,9 @@ try
         Require(pruneStore.Selected() == generation);
         Require(Directory.GetDirectories(pruneRoot).Length <= 6);
     });
+    var history = CheckpointHistoryTests.Run();
+    checks += history.Checks;
+    failures += history.Failures;
 }
 finally
 {

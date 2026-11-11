@@ -1,4 +1,5 @@
 using System.Text.Json;
+using UnityEngine;
 
 namespace SafeDialogueTools;
 
@@ -50,6 +51,35 @@ internal static class NativeSave
     }
 
     internal static SaveInfo ReadInfo(string folder) => new ES3File(Path.Combine(folder, "save.es3")).Load<SaveInfo>(SaveManager.SaveInfoData);
+
+    internal static void WriteThumbnail(string folder)
+    {
+        var path = Path.Combine(folder, "thumbnail.png");
+        var captured = new Texture2D(Screen.width, Screen.height, TextureFormat.RGBA32, false);
+        try
+        {
+            captured.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0, false);
+            captured.Apply(false, false);
+            var render = RenderTexture.GetTemporary(320, 180, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+            var previous = RenderTexture.active;
+            var thumbnail = new Texture2D(320, 180, TextureFormat.RGBA32, false);
+            try
+            {
+                Graphics.Blit(captured, render);
+                RenderTexture.active = render;
+                thumbnail.ReadPixels(new Rect(0, 0, 320, 180), 0, 0, false);
+                thumbnail.Apply(false, false);
+                File.WriteAllBytes(path, ImageConversion.EncodeToPNG(thumbnail));
+            }
+            finally
+            {
+                RenderTexture.active = previous;
+                RenderTexture.ReleaseTemporary(render);
+                UnityEngine.Object.Destroy(thumbnail);
+            }
+        }
+        finally { UnityEngine.Object.Destroy(captured); }
+    }
 
     internal static void Validate(string folder)
     {

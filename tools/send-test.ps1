@@ -4,7 +4,7 @@ $testRoot = (Resolve-Path "$PSScriptRoot/../sandbox/Game").Path
 if (-not (Test-Path -LiteralPath "$testRoot/SAFE_DIALOGUE_TEST_COPY")) { throw 'Not an isolated test copy' }
 if (Test-Path -LiteralPath "$testRoot/test-command.txt") { throw 'Previous test command is still pending' }
 if (Test-Path -LiteralPath "$testRoot/test-result.txt") { Remove-Item -LiteralPath "$testRoot/test-result.txt" }
-[IO.File]::WriteAllText("$testRoot/test-command.txt", $Command)
+[IO.File]::WriteAllText("$testRoot/test-command.txt", $Command, [Text.UTF8Encoding]::new($false))
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 while (-not (Test-Path -LiteralPath "$testRoot/test-result.txt")) {
     if ([DateTime]::UtcNow -gt $deadline) { throw "Test command timed out: $Command" }

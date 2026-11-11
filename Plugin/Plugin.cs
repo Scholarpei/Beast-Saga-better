@@ -19,6 +19,9 @@ public sealed class Plugin : BasePlugin
     internal static ManualLogSource Logger = null!;
     internal static ConfigEntry<bool> EnableCheckpoints = null!;
     internal static ConfigEntry<bool> EnableIndicators = null!;
+    internal static ConfigEntry<int> MaxManualCheckpoints = null!;
+    internal static ConfigEntry<int> MaxPreDialogueCheckpoints = null!;
+    internal static ConfigEntry<bool> CaptureThumbnails = null!;
     internal static ConfigEntry<KeyCode> SaveKey = null!;
     internal static ConfigEntry<KeyCode> LoadKey = null!;
     internal static ConfigEntry<KeyCode> PanelKey = null!;
@@ -42,6 +45,13 @@ public sealed class Plugin : BasePlugin
     internal static bool NativeLoadCompleted;
     internal static int GuiFrames;
     internal static string? PanelSelectedCheckpoint;
+    internal static string? PanelArchiveSelection;
+    internal static IReadOnlyList<CheckpointSummary>? PanelArchive;
+    internal static string PanelNoteDraft = "";
+    internal static bool PanelNoteEditing;
+    internal static LoadWorkStore LoadWorkStore = null!;
+    internal static float NextArchiveRefresh;
+    internal static bool PanelOpenBeforeCapture;
     internal const string KnownFingerprint = "B12412BC21B0B88A07851D15235736AFCFCE48A22AB8D3F1CB3DFB8376360359";
     internal const string ProductionAuthorizationFile = "SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED";
     internal static bool CheckpointsActive => SafetyPolicy.CanOperate(
@@ -64,6 +74,9 @@ public sealed class Plugin : BasePlugin
         EnableCheckpoints = Config.Bind("General", "EnableCheckpoints", false,
             "本版本仅允许隔离副本启用 SL，正式目录即使设为 true 也不会接管原生 F5。");
         EnableIndicators = Config.Bind("General", "EnableIndicators", true, "显示只读判定提示；未知条件不推测结果。");
+        MaxManualCheckpoints = Config.Bind("Checkpoints", "MaxManualCheckpoints", 50, "手动 F5 历史保留数量；已备注存档额外保留。");
+        MaxPreDialogueCheckpoints = Config.Bind("Checkpoints", "MaxPreDialogueCheckpoints", 10, "后台保留的对话前检查点数量。");
+        CaptureThumbnails = Config.Bind("Checkpoints", "CaptureThumbnails", true, "为手动 F5 历史保存 320×180 缩略截图。");
         SaveKey = Config.Bind("Keys", "QuickSave", KeyCode.F5, "快存；对话中选择对话前检查点。");
         LoadKey = Config.Bind("Keys", "QuickLoad", KeyCode.F6, "读取已明确选定的检查点。");
         PanelKey = Config.Bind("Keys", "Panel", KeyCode.Home, "显示或隐藏快速工具面板。");
@@ -73,7 +86,9 @@ public sealed class Plugin : BasePlugin
             Log.LogError("游戏或 interop 版本已变化，插件未挂钩任何游戏方法。请重新验证版本。");
             return;
         }
-        Store = new CheckpointStore(Path.Combine(DataRoot, "checkpoints"), Fingerprint);
+        Store = new CheckpointStore(Path.Combine(DataRoot, "checkpoints"), Fingerprint,
+            MaxManualCheckpoints.Value, MaxPreDialogueCheckpoints.Value);
+        LoadWorkStore = new LoadWorkStore(Path.Combine(DataRoot, "load-work"));
         new Harmony("beastsaga.safedialoguetools").PatchAll(typeof(Plugin).Assembly);
         AddComponent<RuntimeDriver>();
         Log.LogInfo($"Loaded 0.1.0; fingerprint={Fingerprint}; checkpoints={EnableCheckpoints.Value}; testCopy={TestMode}");
@@ -115,6 +130,53 @@ public sealed class Plugin : BasePlugin
         }
     }
 
+    internal static void SelectArchive(string generation)
+    {
+        try
+        {
+            Store.Select(generation);
+            PanelArchiveSelection = generation;
+            RefreshPanelSelectedCheckpoint();
+            RefreshPanelArchive();
+            Tip("已设为读取目标；F6 读取");
+        }
+        catch (Exception error) { Fail("选择历史存档失败", error, false); }
+    }
+
+    internal static void SaveArchiveNote(string generation, string note)
+    {
+        try
+        {
+            Store.SetNote(generation, note);
+            PanelNoteDraft = Store.Notes().GetValueOrDefault(generation, "");
+            RefreshPanelArchive();
+            Tip("存档备注已保存");
+        }
+        catch (Exception error) { Fail("保存存档备注失败", error, false); }
+    }
+
+    internal static void RefreshPanelArchive()
+    {
+        PanelArchive = Array.Empty<CheckpointSummary>();
+        if (!CheckpointsActive || Store == null || Faulted) return;
+        try
+        {
+            PanelArchive = Store.List(verifyPayloads: false).Select(item =>
+            {
+                if (item.Kind != CheckpointKind.Legacy) return item;
+                var info = NativeSave.ReadInfo(Store.Validate(item.Generation));
+                return item with
+                {
+                    CapturedAt = DateTime.TryParse(info.updateTime, out var captured) ? captured : item.CapturedAt,
+                    MapName = info.mapName,
+                    PlayerLevel = info.playerLv,
+                    Round = info.round
+                };
+            }).ToArray();
+        }
+        catch (Exception error) { Logger.LogMessage("面板无法读取历史存档：" + error.Message); }
+    }
+
     internal static string? UnsafeReason(bool permitDialogue)
     {
         if (Faulted) return "上次操作异常，本次运行已停用存读档，请重启游戏";
@@ -151,7 +213,7 @@ public sealed class Plugin : BasePlugin
             }
             var reason = UnsafeReason(false);
             if (reason != null) { Tip(reason); return; }
-            var generation = Capture();
+            var generation = Capture(CheckpointKind.Manual);
             Store.Select(generation);
             Tip("快速存档完成");
             Store.Prune(DialogueCheckpoint);
@@ -166,6 +228,40 @@ public sealed class Plugin : BasePlugin
         finally { Busy = false; }
     }
 
+    internal static string Capture(CheckpointKind kind)
+    {
+        Busy = true;
+        try
+        {
+            var capturedAt = DateTime.Now;
+            var mapName = MapManager._Instance.GetMapNameInfo();
+            var playerLevel = PlayerDataManager._Instance._PlayerData.Lv;
+            var round = PlayerDataManager._Instance._PlayerData._Round;
+            string? screenshot = null;
+            PanelOpenBeforeCapture = CommandPanelState.Open;
+            CommandPanelState.Open = false;
+            var generation = Store.Create(path =>
+                {
+                    NativeSave.Write(path);
+                    if (kind == CheckpointKind.Manual && CaptureThumbnails.Value)
+                    {
+                        try { NativeSave.WriteThumbnail(path); }
+                        catch (Exception error) { Logger.LogWarning("缩略截图失败，检查点仍保留：" + error.Message); }
+                        screenshot = File.Exists(Path.Combine(path, "thumbnail.png")) ? "thumbnail.png" : null;
+                    }
+                },
+                NativeSave.Validate,
+                new CheckpointMetadata(
+                    kind, capturedAt, mapName, playerLevel, round, screenshot));
+            return generation;
+        }
+        finally
+        {
+            CommandPanelState.Open = PanelOpenBeforeCapture;
+            Busy = false;
+        }
+    }
+
     internal static void BeforeConversation(string title)
     {
         if (!CheckpointsActive || Busy || Loading || IsDialogue) return;
@@ -175,7 +271,7 @@ public sealed class Plugin : BasePlugin
         if (reason != null) { Logger.LogInfo("Checkpoint skipped: " + reason); return; }
         try
         {
-            DialogueCheckpoint = Capture();
+            DialogueCheckpoint = Capture(CheckpointKind.PreDialogue);
             Store.Prune(DialogueCheckpoint);
             Logger.LogInfo("Pre-dialogue checkpoint: " + title + " / " + DialogueCheckpoint);
         }
@@ -193,8 +289,8 @@ public sealed class Plugin : BasePlugin
             if (generation == null) { Tip("尚未选择有效快存"); return; }
             var source = Store.Validate(generation);
             NativeSave.Validate(source);
-            LoadWork = Path.Combine(DataRoot, "load-work", Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(LoadWork);
+            LoadWorkStore.CleanupExcept(null);
+            LoadWork = LoadWorkStore.Prepare();
             foreach (var file in Directory.GetFiles(source).Where(path => Path.GetFileName(path) != "manifest.json"))
                 File.Copy(file, Path.Combine(LoadWork, Path.GetFileName(file)));
             NativeSave.Validate(LoadWork);
@@ -241,9 +337,24 @@ public sealed class Plugin : BasePlugin
 
     internal static CommandPanelState.State PanelState()
     {
+        if (CommandPanelState.Open && CommandPanelState.Tab == CommandPanelTab.Archive && !Faulted &&
+            Time.realtimeSinceStartup >= NextArchiveRefresh && !PanelNoteEditing)
+        {
+            NextArchiveRefresh = Time.realtimeSinceStartup + 0.5f;
+            RefreshPanelArchive();
+        }
+        PanelArchive ??= Array.Empty<CheckpointSummary>();
+        var archive = PanelArchive;
+        CheckpointSummary? selection = null;
+        if (CheckpointsActive && !Faulted)
+        {
+            var manual = archive.Where(item => item.Kind == CheckpointKind.Manual).ToArray();
+            selection = manual.FirstOrDefault(item => item.Generation == PanelArchiveSelection) ??
+                        manual.FirstOrDefault(item => item.Generation == PanelSelectedCheckpoint);
+        }
         return new CommandPanelState.State(
             CheckpointsActive, IsDialogue, Busy, Loading, Faulted, EnableIndicators.Value, TestMode,
-            DialogueCheckpoint, PanelSelectedCheckpoint, UnsafeReason(IsDialogue));
+            DialogueCheckpoint, PanelSelectedCheckpoint, UnsafeReason(IsDialogue), archive, selection);
     }
 }
 
@@ -300,9 +411,48 @@ public sealed class RuntimeDriver : MonoBehaviour
     private Texture2D? panelCard;
     private Texture2D? panelLine;
     private Texture2D? panelButton;
+    private Texture2D? panelButtonHoverTexture;
+    private Texture2D? panelTabTexture;
+    private Texture2D? panelTabActiveTexture;
+    private Texture2D? panelArchiveRowTexture;
+    private Texture2D? panelArchiveSelectedTexture;
     private GUIStyle? panelButtonHover;
+    private GUIStyle? panelTabStyle;
+    private GUIStyle? panelTabActiveStyle;
+    private GUIStyle? panelArchiveRowStyle;
+    private GUIStyle? panelArchiveSelectedRowStyle;
+    private GUIStyle? panelBadgeStyle;
+    private GUIStyle? panelTextFieldStyle;
+    private GUIStyle? panelSmallButtonStyle;
+    private GUIStyle? panelArchiveLineStyle;
+    private GUIStyle? panelArchiveNoteStyle;
+    private Vector2 archiveScroll;
+    private string? thumbnailGeneration;
+    private Texture2D? thumbnailTexture;
 
     public RuntimeDriver(IntPtr pointer) : base(pointer) { }
+
+    public void OnDestroy()
+    {
+        if (thumbnailTexture != null) UnityEngine.Object.Destroy(thumbnailTexture);
+        thumbnailTexture = null;
+        thumbnailGeneration = null;
+        if (panelSurface != null) UnityEngine.Object.Destroy(panelSurface);
+        if (panelCard != null) UnityEngine.Object.Destroy(panelCard);
+        if (panelLine != null) UnityEngine.Object.Destroy(panelLine);
+        if (panelButton != null) UnityEngine.Object.Destroy(panelButton);
+        if (panelButtonHoverTexture != null) UnityEngine.Object.Destroy(panelButtonHoverTexture);
+        if (panelTabTexture != null) UnityEngine.Object.Destroy(panelTabTexture);
+        if (panelTabActiveTexture != null) UnityEngine.Object.Destroy(panelTabActiveTexture);
+        if (panelArchiveRowTexture != null) UnityEngine.Object.Destroy(panelArchiveRowTexture);
+        if (panelArchiveSelectedTexture != null) UnityEngine.Object.Destroy(panelArchiveSelectedTexture);
+    }
+
+    private void OnApplicationQuit()
+    {
+        try { Plugin.LoadWorkStore?.CleanupExcept(null); }
+        catch (Exception error) { Plugin.Logger.LogWarning("读档临时目录清理失败：" + error.Message); }
+    }
 
     public void Update()
     {
@@ -319,11 +469,16 @@ public sealed class RuntimeDriver : MonoBehaviour
                 if (selected != null && (selected.GetComponent<UnityEngine.UI.InputField>() != null || selected.GetComponent<TMPro.TMP_InputField>() != null)) return;
             }
             if (FairyGUI.Stage.inst != null && FairyGUI.Stage.inst.focus != null && FairyGUI.Stage.inst.focus.TryCast<FairyGUI.InputTextField>() != null) return;
+            if (CommandPanelState.Open && CommandPanelState.Tab == CommandPanelTab.Archive && Plugin.PanelNoteEditing) return;
             if (panel && !save && !load && Time.realtimeSinceStartup - Plugin.LastInput >= 0.35f)
             {
                 Plugin.LastInput = Time.realtimeSinceStartup;
                 CommandPanelState.ToggleHome(true, false);
-                if (CommandPanelState.Open) Plugin.RefreshPanelSelectedCheckpoint();
+                if (CommandPanelState.Open)
+                {
+                    Plugin.RefreshPanelSelectedCheckpoint();
+                    Plugin.RefreshPanelArchive();
+                }
                 return;
             }
             if (!panel && ((save && !load) || (load && !save)) && Time.realtimeSinceStartup - Plugin.LastInput < 0.35f) return;
@@ -332,7 +487,11 @@ public sealed class RuntimeDriver : MonoBehaviour
             if (save && !load)
             {
                 Plugin.SavePressed();
-                if (CommandPanelState.Open) Plugin.RefreshPanelSelectedCheckpoint();
+                if (CommandPanelState.Open)
+                {
+                    Plugin.RefreshPanelSelectedCheckpoint();
+                    Plugin.RefreshPanelArchive();
+                }
             }
             else if (load && !save) Plugin.LoadPressed();
         }
@@ -342,11 +501,13 @@ public sealed class RuntimeDriver : MonoBehaviour
     public void OnGUI()
     {
         Plugin.GuiFrames++;
+        CommandPanelState.ClearPointerBounds();
         if (Time.realtimeSinceStartup <= Plugin.NoticeUntil && !string.IsNullOrEmpty(Plugin.Notice))
             DrawMessage(new Rect(Screen.width * 0.2f, 24, Screen.width * 0.6f, 46), Plugin.Notice);
         RuntimeDriver.ClearStaleHover(Indicators.HoveredButton);
         if (CommandPanelState.Open)
             DrawCommandPanel();
+        CommandPanelState.ClearPointerBounds();
         if (Plugin.EnableIndicators.Value && Plugin.IsDialogue && Indicators.HoveredButton != null && !string.IsNullOrEmpty(Indicators.HoverHint))
             DrawFutureWindow();
     }
@@ -369,31 +530,51 @@ public sealed class RuntimeDriver : MonoBehaviour
         var layout = CommandPanelLayout.Create(Screen.width, Screen.height);
         var bounds = new Rect(layout.X, layout.Y, layout.Width, layout.Height);
         EnsurePanelStyles();
+        CommandPanelState.SetPointerBounds(bounds.x, bounds.y, bounds.width, bounds.height);
         GUI.Box(bounds, GUIContent.none, panelSurfaceStyle!);
         GUI.Box(new Rect(bounds.x, bounds.y, bounds.width, 1), GUIContent.none, panelLineStyle!);
         GUI.Box(new Rect(bounds.x + 13, bounds.y + 10, bounds.width - 26, 74), GUIContent.none, panelCardStyle!);
-        GUI.Box(new Rect(bounds.x + 20, bounds.y + 90, bounds.width - 40, 160), GUIContent.none, panelCardStyle!);
+        GUI.Box(new Rect(bounds.x + 20, bounds.y + 124, bounds.width - 40, 140), GUIContent.none, panelCardStyle!);
         GUI.Label(new Rect(bounds.x + 29, bounds.y + 24, 190, 26), "Safe Dialogue Tools", panelTitleStyle);
         GUI.Label(new Rect(bounds.x + 29, bounds.y + 52, 220, 20), "对话安全与预测工具", panelSubtitleStyle);
         DrawStatusDot(new Rect(bounds.xMax - 37, bounds.y + 26, 11, 11), state);
-        GUI.Label(new Rect(bounds.x + 20, bounds.y + 96, 200, 20), "状态", panelSectionStyle);
-        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 124, bounds.width - 40, 24), "运行模式", state.Mode, 70);
-        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 152, bounds.width - 40, 24), "对话前", state.DialogueCheckpointText, 70);
-        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 180, bounds.width - 40, 24), "读取目标", state.SelectedCheckpointText, 70);
-        GUI.Label(new Rect(bounds.x + 20, bounds.y + 212, bounds.width - 40, 38), state.BlockedText, panelValueStyle);
-        GUI.Label(new Rect(bounds.x + 20, bounds.y + 254, 200, 20), "快速操作", panelSectionStyle);
-        var actionBounds = new Rect(bounds.x + 20, bounds.y + 282, bounds.width - 40, 42);
+        var statusTab = new Rect(bounds.x + 20, bounds.y + 88, (bounds.width - 46) / 2f, 32);
+        var archiveTab = new Rect(statusTab.xMax + 6, bounds.y + 88, statusTab.width, 32);
+        if (GUI.Button(statusTab, "状态", CommandPanelState.Tab == CommandPanelTab.Status ? panelTabActiveStyle! : panelTabStyle!))
+        {
+            CommandPanelState.SelectTab(CommandPanelTab.Status);
+            Plugin.PanelNoteEditing = false;
+        }
+        if (GUI.Button(archiveTab, "存档库", CommandPanelState.Tab == CommandPanelTab.Archive ? panelTabActiveStyle! : panelTabStyle!))
+        {
+            CommandPanelState.SelectTab(CommandPanelTab.Archive);
+            Plugin.RefreshPanelArchive();
+            Plugin.PanelNoteEditing = false;
+        }
+        if (CommandPanelState.Tab == CommandPanelTab.Archive)
+        {
+            DrawArchiveTab(bounds, state);
+            return;
+        }
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 130, 200, 20), "状态", panelSectionStyle);
+        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 154, bounds.width - 40, 24), "运行模式", state.Mode, 70);
+        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 180, bounds.width - 40, 24), "对话前", state.DialogueCheckpointText, 70);
+        DrawInfoRow(new Rect(bounds.x + 20, bounds.y + 206, bounds.width - 40, 24), "读取目标", state.SelectedCheckpointText, 70);
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 234, bounds.width - 40, 30), state.BlockedText, panelValueStyle);
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 272, 200, 20), "快速操作", panelSectionStyle);
+        var actionBounds = new Rect(bounds.x + 20, bounds.y + 298, bounds.width - 40, 42);
         var saveBounds = new Rect(actionBounds.x, actionBounds.y, actionBounds.width, 42);
         if (DrawActionButton(saveBounds, "快速保存（F5）", state.CanSave, panelButtonStyle!, panelButtonHover!, panelDisabledButtonStyle!))
         {
             CommandPanelState.RunSave(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
             Plugin.RefreshPanelSelectedCheckpoint();
+            Plugin.RefreshPanelArchive();
         }
         var loadBounds = new Rect(actionBounds.x, actionBounds.y + 50, actionBounds.width, 42);
         if (DrawActionButton(loadBounds, "读取检查点（F6）", state.CanLoad, panelButtonStyle!, panelButtonHover!, panelDisabledButtonStyle!))
             CommandPanelState.RunLoad(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
-        GUI.Label(new Rect(bounds.x + 20, bounds.y + 386, 200, 20), "辅助", panelSectionStyle);
-        var toggleBounds = new Rect(bounds.x + 20, bounds.y + 414, bounds.width - 40, 36);
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + 398, 200, 20), "辅助", panelSectionStyle);
+        var toggleBounds = new Rect(bounds.x + 20, bounds.y + 424, bounds.width - 40, 36);
         GUI.Box(toggleBounds, GUIContent.none, panelCardStyle!);
         var enabled = GUI.Toggle(new Rect(toggleBounds.x + 14, toggleBounds.y + 7, toggleBounds.width - 28, 22),
             state.IndicatorsEnabled, "悬停显示判定与未来预览", panelToggleStyle);
@@ -406,6 +587,75 @@ public sealed class RuntimeDriver : MonoBehaviour
     {
         GUI.Label(new Rect(bounds.x, bounds.y, labelWidth, bounds.height), label, panelValueStyle);
         GUI.Label(new Rect(bounds.x + labelWidth, bounds.y, bounds.width - labelWidth, bounds.height), value, panelValueStyle);
+    }
+
+    private void DrawArchiveTab(Rect bounds, CommandPanelState.State state)
+    {
+        var archive = state.Archive?.Where(item => item.Kind == CheckpointKind.Manual).ToList() ?? new List<CheckpointSummary>();
+        GUI.Label(new Rect(bounds.x + 28, bounds.y + 128, bounds.width - 56, 28), state.ArchiveCountText, panelValueStyle);
+        var listBounds = new Rect(bounds.x + 24, bounds.y + 164, bounds.width - 48, 318);
+        archiveScroll = GUI.BeginScrollView(listBounds, archiveScroll,
+            new Rect(0, 0, listBounds.width - 18, archive.Count * 88), false, true);
+        for (var index = 0; index < archive.Count; index++)
+        {
+            var item = archive[index];
+            var row = new Rect(1, index * 88, listBounds.width - 20, 80);
+            var selected = state.ArchiveSelection?.Generation == item.Generation;
+            if (GUI.Button(row, GUIContent.none, selected ? panelArchiveSelectedRowStyle! : panelArchiveRowStyle!))
+            {
+                Plugin.PanelArchiveSelection = item.Generation;
+                Plugin.PanelNoteDraft = item.Note ?? "";
+                Plugin.PanelNoteEditing = false;
+            }
+            GUI.Label(new Rect(row.x + 14, row.y + 8, row.width - 132, 28), item.DisplayTopLine(), panelArchiveLineStyle!);
+            GUI.Label(new Rect(row.xMax - 110, row.y + 8, 96, 28), item.BadgeText(), panelBadgeStyle);
+            GUI.Label(new Rect(row.x + 14, row.y + 38, row.width - 28, 28), item.DisplayDetailLine(), panelValueStyle);
+            GUI.Label(new Rect(row.x + 14, row.y + 66, row.width - 28, 28), item.NoteText(), panelArchiveNoteStyle!);
+        }
+        GUI.EndScrollView();
+
+        var selection = state.ArchiveSelection;
+        var detail = new Rect(bounds.x + 24, bounds.y + 498, bounds.width - 48, 138);
+        GUI.Box(detail, GUIContent.none, panelCardStyle!);
+        if (selection is null)
+        {
+            GUI.Label(new Rect(detail.x + 14, detail.y + 12, detail.width - 28, 26), "选择一份历史存档", panelValueStyle);
+            GUI.Label(new Rect(detail.x + 14, detail.y + 42, detail.width - 28, detail.height - 54), "列表只包含手动 F5 存档；对话前自动检查点仍在后台保护。", panelSubtitleStyle);
+        }
+        else
+        {
+            var preview = LoadThumbnail(selection);
+            if (preview != null) GUI.DrawTexture(new Rect(detail.x + 14, detail.y + 14, 160, 90), preview, ScaleMode.ScaleAndCrop);
+            else GUI.Label(new Rect(detail.x + 14, detail.y + 14, 160, 90), "截图不可用", panelSubtitleStyle);
+            GUI.Label(new Rect(detail.x + 188, detail.y + 12, detail.width - 202, 26), selection.DisplayTopLine(), panelArchiveLineStyle!);
+            GUI.Label(new Rect(detail.x + 188, detail.y + 42, detail.width - 202, 26), selection.DisplayDetailLine(), panelValueStyle);
+            GUI.Label(new Rect(detail.x + 188, detail.y + 70, detail.width - 202, 24), selection.Selected ? "当前读取目标" : "未设为读取目标", panelSubtitleStyle);
+            if (!Plugin.PanelNoteEditing)
+            {
+                if (GUI.Button(new Rect(detail.x + 14, detail.y + 108, 104, 28), "备注", panelSmallButtonStyle!))
+                {
+                    Plugin.PanelNoteDraft = selection.Note ?? "";
+                    Plugin.PanelNoteEditing = true;
+                }
+                if (GUI.Button(new Rect(detail.x + 126, detail.y + 108, 140, 28), "设为读取目标", panelSmallButtonStyle!)) Plugin.SelectArchive(selection.Generation);
+            }
+            else
+            {
+                Plugin.PanelNoteDraft = GUI.TextField(new Rect(detail.x + 14, detail.y + 104, detail.width - 142, 32), Plugin.PanelNoteDraft, panelTextFieldStyle!);
+                if (GUI.Button(new Rect(detail.xMax - 120, detail.y + 104, 54, 28), "保存", panelSmallButtonStyle!))
+                {
+                    Plugin.SaveArchiveNote(selection.Generation, Plugin.PanelNoteDraft);
+                    Plugin.PanelNoteEditing = false;
+                }
+                if (GUI.Button(new Rect(detail.xMax - 62, detail.y + 104, 54, 28), "取消", panelSmallButtonStyle!))
+                {
+                    Plugin.PanelNoteDraft = selection.Note ?? "";
+                    Plugin.PanelNoteEditing = false;
+                }
+            }
+        }
+        GUI.Label(new Rect(bounds.x + 20, bounds.y + bounds.height - 34, bounds.width - 40, 20),
+            $"{Plugin.PanelKey.Value} 收起 · {Plugin.LoadKey.Value} 读取当前目标", panelSubtitleStyle);
     }
 
     private bool DrawActionButton(Rect bounds, string text, bool enabled, GUIStyle normal, GUIStyle hover, GUIStyle disabled)
@@ -433,6 +683,29 @@ public sealed class RuntimeDriver : MonoBehaviour
         return texture;
     }
 
+    private Texture2D? LoadThumbnail(CheckpointSummary summary)
+    {
+        if (!summary.HasScreenshot || summary.ScreenshotPath is null) return null;
+        if (thumbnailGeneration == summary.Generation && thumbnailTexture != null) return thumbnailTexture;
+        try
+        {
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            if (!texture.LoadImage(File.ReadAllBytes(summary.ScreenshotPath)))
+            {
+                UnityEngine.Object.Destroy(texture);
+                return null;
+            }
+            if (thumbnailTexture != null) UnityEngine.Object.Destroy(thumbnailTexture);
+            thumbnailGeneration = summary.Generation;
+            thumbnailTexture = texture;
+            return texture;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private void EnsurePanelStyles()
     {
         if (panelTitleStyle != null) return;
@@ -440,16 +713,29 @@ public sealed class RuntimeDriver : MonoBehaviour
         panelCard = CreateTexture(new Color32(26, 36, 51, 72));
         panelLine = CreateTexture(new Color32(93, 182, 197, 120));
         panelButton = CreateTexture(new Color32(23, 34, 48, 210));
-        var buttonHoverTexture = CreateTexture(new Color32(37, 56, 75, 235));
+        panelButtonHoverTexture = CreateTexture(new Color32(37, 56, 75, 235));
+        panelTabTexture = CreateTexture(new Color32(20, 29, 42, 190));
+        panelTabActiveTexture = CreateTexture(new Color32(35, 64, 76, 235));
+        panelArchiveRowTexture = CreateTexture(new Color32(20, 29, 42, 180));
+        panelArchiveSelectedTexture = CreateTexture(new Color32(38, 68, 81, 230));
         panelTitleStyle = new GUIStyle { normal = { textColor = new Color32(235, 243, 255, 255) }, fontSize = 19, fontStyle = FontStyle.Bold };
         panelSubtitleStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = 12 };
         panelSectionStyle = new GUIStyle { normal = { textColor = new Color32(134, 217, 229, 255) }, fontSize = 12, fontStyle = FontStyle.Bold };
         panelLabelStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = 12 };
         panelValueStyle = new GUIStyle { normal = { textColor = new Color32(212, 226, 241, 255) }, fontSize = 13, wordWrap = true };
         panelButtonStyle = new GUIStyle(panelLabelStyle) { normal = { background = panelButton, textColor = new Color32(229, 241, 255, 255) }, alignment = TextAnchor.MiddleCenter, fontSize = 14 };
-        panelButtonHover = new GUIStyle(panelButtonStyle) { normal = { background = buttonHoverTexture } };
+        panelButtonHover = new GUIStyle(panelButtonStyle) { normal = { background = panelButtonHoverTexture } };
         panelDisabledButtonStyle = new GUIStyle(panelButtonStyle) { normal = { background = panelButton, textColor = new Color32(110, 122, 138, 255) } };
-        panelToggleStyle = new GUIStyle(panelValueStyle) { fontSize = 13 };
+        panelTabStyle = new GUIStyle(panelButtonStyle) { normal = { background = panelTabTexture, textColor = new Color32(181, 195, 212, 255) } };
+        panelTabActiveStyle = new GUIStyle(panelButtonStyle) { normal = { background = panelTabActiveTexture, textColor = new Color32(154, 235, 244, 255) } };
+        panelArchiveRowStyle = new GUIStyle { normal = { background = panelArchiveRowTexture } };
+        panelArchiveSelectedRowStyle = new GUIStyle { normal = { background = panelArchiveSelectedTexture } };
+        panelArchiveLineStyle = new GUIStyle(panelValueStyle) { fontSize = 18, wordWrap = false };
+        panelArchiveNoteStyle = new GUIStyle(panelValueStyle) { fontSize = 17, wordWrap = true };
+        panelBadgeStyle = new GUIStyle(panelSubtitleStyle) { fontSize = 14, alignment = TextAnchor.UpperRight };
+        panelTextFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = 17 };
+        panelSmallButtonStyle = new GUIStyle(panelButtonStyle) { fontSize = 15 };
+        panelToggleStyle = new GUIStyle(panelValueStyle) { fontSize = 14 };
         panelSurfaceStyle = new GUIStyle { normal = { background = panelSurface } };
         panelCardStyle = new GUIStyle { normal = { background = panelCard } };
         panelLineStyle = new GUIStyle { normal = { background = panelLine } };

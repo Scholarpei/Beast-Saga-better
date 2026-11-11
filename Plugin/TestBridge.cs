@@ -11,6 +11,7 @@ internal static class TestBridge
 
     internal static void Tick()
     {
+        if (!Plugin.TestMode) return;
         if (Time.realtimeSinceStartup - lastPoll < 0.5f) return;
         lastPoll = Time.realtimeSinceStartup;
         var commandPath = Path.Combine(Plugin.GameRoot, "test-command.txt");
@@ -24,7 +25,22 @@ internal static class TestBridge
             else if (command == "save") Plugin.SavePressed();
             else if (command == "load") Plugin.LoadPressed();
             else if (command == "enable") Plugin.EnableCheckpoints.Value = true;
-            else if (command.StartsWith("native-load-quick:")) SaveManager._Instance.SelectQuickGame(int.Parse(command.Split(':')[1]));
+            else if (command.StartsWith("note:"))
+            {
+                var payload = command[5..];
+                var separator = payload.IndexOf('|');
+                var parts = separator >= 0
+                    ? new[] { payload[..separator], payload[(separator + 1)..] }
+                    : payload.Split(':', 2);
+                if (parts.Length != 2) throw new InvalidOperationException("Invalid note command");
+                Plugin.SaveArchiveNote(parts[0], parts[1]);
+            }
+            else if (command.StartsWith("select-checkpoint:")) Plugin.SelectArchive(command[18..]);
+            else if (command.StartsWith("native-load-quick:"))
+            {
+                if (!int.TryParse(command.AsSpan(18), out var quickIndex)) throw new InvalidOperationException("Invalid quick save index");
+                SaveManager._Instance.SelectQuickGame(quickIndex);
+            }
             else if (command == "load-seed")
             {
                 var manager = SaveManager._Instance;
@@ -110,7 +126,8 @@ internal static class TestBridge
             ["mapTeleporting"] = map?._ChuanSongIng, ["battle"] = battle?._IsBattle,
             ["level"] = player?._PlayerData?.Lv, ["notice"] = Plugin.Notice,
             ["checkpoint"] = Plugin.DialogueCheckpoint, ["loading"] = Plugin.Loading,
-            ["faulted"] = Plugin.Faulted, ["selected"] = Plugin.Store.Selected(),
+            ["faulted"] = Plugin.Faulted, ["selected"] = Plugin.Store?.Selected(),
+            ["archiveCount"] = Plugin.PanelArchive?.Count,
             ["conversation"] = DialogueManager.hasInstance ? DialogueManager.lastConversationID : null
         };
         values["guiFrames"] = Plugin.GuiFrames;
