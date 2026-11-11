@@ -162,6 +162,11 @@ internal static class Indicators
                     paths.Add((current.Path, current.PathStops));
                     continue;
                 }
+                if (script.Effects.Any(effect => effect.Kind == "shop"))
+                {
+                    paths.Add((current.Path, current.PathStops));
+                    continue;
+                }
                 var battle = BattleSequencePattern.Match(current.Node.Sequence ?? "");
                 if (battle.Success)
                 {
@@ -532,6 +537,7 @@ internal static class Indicators
             else if (effect.Kind == "friend-kungfu-skill") lines.Add(PartyName(effect.Target) + "习得技能：" + effect.Detail);
             else if (effect.Kind == "item") lines.Add((effect.Amount >= 0 ? "获得：" : "失去：") + ColoredName(effect.Target, false) + " ×" + FormatCount(effect.Amount));
             else if (effect.Kind == "equip") lines.Add((effect.Amount >= 0 ? "获得装备：" : "失去装备：") + ColoredName(effect.Target, true) + " ×" + FormatCount(effect.Amount));
+            else if (effect.Kind == "shop") lines.Add("打开商店：" + effect.Target);
             else if (effect.Kind == "variable") lines.Add("剧情：" + effect.Target);
             else if (effect.Kind == "quest") lines.Add("任务：" + effect.Target + " " + effect.Detail);
         }

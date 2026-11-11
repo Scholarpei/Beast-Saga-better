@@ -38,6 +38,7 @@ public static class FutureScriptPreview
     private static readonly Regex FriendKongFuSkillPattern = new(@"\AAwardFriendKongFuSkill\s*\(\s*(['""])(?<friend>[^'""]+)\1\s*,\s*(['""])(?<name>[^'""]+)\2\s*\)\s*\z", RegexOptions.CultureInvariant);
     private static readonly Regex MapPattern = new(@"\AGoOtherMap\s*\(\s*(['""])(?<name>[^'""]+)\1\s*\)\s*\z", RegexOptions.CultureInvariant);
     private static readonly Regex UnknownMapPattern = new(@"\AGo(?:Can|Not|Back)OtherMap\s*\(\s*\)\s*\z", RegexOptions.CultureInvariant);
+    private static readonly Regex OpenShopPattern = new(@"\AOpenShop\s*\(\s*(['""])(?<name>[^'""]+)\1\s*\)\s*\z", RegexOptions.CultureInvariant);
 
     public static FutureScriptResult Parse(string? script)
     {
@@ -114,6 +115,7 @@ public static class FutureScriptPreview
                 effects.Add(new("map-unknown", "", 1));
                 continue;
             }
+            if (SimpleNamed(statement, OpenShopPattern, "shop", out var shop)) { effects.Add(shop); continue; }
             if (statement is "SaveData()" or "SaveData();")
             {
                 effects.Add(new("save", "", 1));

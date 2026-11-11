@@ -108,6 +108,24 @@ try
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("失去：铜钱 ×5") && hint.Contains("后续脚本未知") && !hint.Contains("宝物"), hint);
     });
+    Test("merchant shop scripts are predicted instead of reported unknown", () =>
+    {
+        var askTeacher = new DialogueEntry { id = 1274 };
+        var reply = new DialogueEntry { id = 1275 };
+        var shop = new DialogueEntry { id = 2610, userScript = "OpenShop(\"狸子的书坊\")" };
+        askTeacher.outgoingLinks.Add(new Link(reply));
+        reply.outgoingLinks.Add(new Link(shop));
+        var hint = Indicators.Hint(askTeacher);
+        Require(hint.Contains("打开商店：狸子的书坊"), hint);
+        Require(!hint.Contains("后续脚本未知"), hint);
+    });
+    Test("shop opening stops prediction at the shop boundary", () =>
+    {
+        var shop = new DialogueEntry { id = 2610, userScript = "OpenShop(\"狸子的书坊\")" };
+        shop.outgoingLinks.Add(new Link(new DialogueEntry { id = 2611, userScript = "AwardItem('宝物', 1)" }));
+        var hint = Indicators.Hint(shop);
+        Require(hint.Contains("打开商店：狸子的书坊") && !hint.Contains("宝物") && !hint.Contains("后续脚本未知"), hint);
+    });
     Test("future conditional node does not claim its reward", () =>
     {
         var entry = new DialogueEntry();
