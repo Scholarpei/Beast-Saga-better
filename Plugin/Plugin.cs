@@ -411,6 +411,31 @@ internal static class FishingInstantSuccessPatch
     }
 }
 
+[HarmonyPatch(typeof(FishGoUILogicResident), nameof(FishGoUILogicResident.InitData))]
+internal static class FishingCountdownSkipPatch
+{
+    private static bool reportedFailure;
+
+    private static void Postfix(FishGoUILogicResident __instance)
+    {
+        if (!Plugin.EnableFishingInstantSuccess.Value) return;
+        try
+        {
+            var countdown = __instance.ui_TCountDown;
+            if (countdown == null ||
+                !CheatPolicy.ShouldSkipFishingCountdown(Plugin.EnableFishingInstantSuccess.Value, countdown.playing)) return;
+            countdown.Stop(true, false);
+            __instance.PlayEndCountDown();
+        }
+        catch (Exception error)
+        {
+            if (reportedFailure) return;
+            reportedFailure = true;
+            Plugin.Logger.LogError("跳过钓鱼倒计时失败：" + error);
+        }
+    }
+}
+
 internal static class PanelArchiveData
 {
     internal static CheckpointArchiveSortMode SortMode = CheckpointArchiveSortMode.CapturedTime;
@@ -700,7 +725,11 @@ public sealed class RuntimeDriver : MonoBehaviour
         GUI.Box(card, GUIContent.none, panelCardStyle!);
         var toggleBounds = new Rect(card.x + 18, card.y + 14, card.width - 36, Math.Max(28f, 32f * scale));
         var enabled = GUI.Toggle(toggleBounds, state.FishingInstantSuccess, "钓鱼直接成功", panelToggleStyle);
-        if (enabled != state.FishingInstantSuccess) Plugin.EnableFishingInstantSuccess.Value = enabled;
+        if (enabled != state.FishingInstantSuccess)
+        {
+            Plugin.EnableFishingInstantSuccess.Value = enabled;
+            Plugin.Tip(enabled ? "钓鱼直接成功已开启" : "钓鱼直接成功已关闭");
+        }
         GUI.Label(new Rect(card.xMax - Math.Max(90f, 110f * scale) - 18, card.y + 15,
                 Math.Max(90f, 110f * scale), 28),
             enabled ? "已开启" : "已关闭", panelBadgeStyle);

@@ -236,6 +236,9 @@ internal static class CheckpointHistoryTests
                 Require(!CheatPolicy.ShouldFinishFishing(false, true, 10));
                 Require(!CheatPolicy.ShouldFinishFishing(true, false, 10));
                 Require(!CheatPolicy.ShouldFinishFishing(true, true, 0));
+                Require(CheatPolicy.ShouldSkipFishingCountdown(true, true));
+                Require(!CheatPolicy.ShouldSkipFishingCountdown(false, true));
+                Require(!CheatPolicy.ShouldSkipFishingCountdown(true, false));
             });
 
             Test("archive rows split long capture information across two readable lines", () =>
