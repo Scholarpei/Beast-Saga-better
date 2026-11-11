@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Home 面板布局预览</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
+    body { margin: 0; background: #0b0f17; color: #d4e2f1; }
+    .toolbar { position: fixed; left: 0; right: 0; top: 0; z-index: 20; display: flex; gap: 10px; align-items: center; padding: 12px 18px; background: #101724; border-bottom: 1px solid #27364a; }
+    .toolbar strong { color: #d4e2f1; }
+    .toolbar label { color: #91a4be; font-size: 13px; }
+    .toolbar select,.toolbar input { background: #172234; color: #d4e2f1; border: 1px solid #33465f; border-radius: 5px; padding: 5px 8px; }
+    .toolbar button { background: #1f3d47; color: #9aeaf4; border: 1px solid #2d6a77; border-radius: 5px; padding: 6px 11px; cursor: pointer; }
+    .stage { min-height: 100vh; display: grid; place-items: center; padding-top: 54px; box-sizing: border-box; }
+    .screen { position: relative; overflow: hidden; background: rgba(10,15,24,.98); border: 1px solid rgba(93,182,197,.48); box-shadow: 0 0 40px #000a; }
+    .surface { position: absolute; inset: 0; padding: 24px 16px 16px; box-sizing: border-box; display: flex; flex-direction: column; }
+    header { display: flex; align-items: center; gap: 16px; padding: 13px 14px; background: rgba(26,36,51,.42); border: 1px solid rgba(93,182,197,.15); }
+    h1 { margin: 0; font-size: calc(22px * var(--scale)); letter-spacing: .3px; }
+    h2 { margin: 3px 0 0; color: #91a4be; font-size: calc(13px * var(--scale)); font-weight: 400; }
+    .status { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #9eeeb2; font-size: calc(13px * var(--scale)); }
+    .close-panel { margin-left: 12px; border: 1px solid #2d6a77; border-radius: 4px; background: #1f3d47; color: #9aeaf4; cursor: pointer; font: inherit; padding: 5px 10px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #5feeb2; box-shadow: 0 0 8px #5feeb2; }
+    .tabs { display: flex; gap: 7px; margin: 10px 0 14px; }
+    .tab { flex: 1; border: 0; border-radius: 4px; padding: calc(9px * var(--scale)); background: rgba(20,29,42,.9); color: #b5c3d4; font-size: calc(15px * var(--scale)); cursor: pointer; }
+    .tab.active { background: rgba(35,64,76,.95); color: #9aeaf4; box-shadow: inset 0 -2px #5dbed6; }
+    main { flex: 1; min-height: 0; display: flex; }
+    .list-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 8px; color: #d4e2f1; font-size: calc(14px * var(--scale)); }
+    .sort { background: #1f3d47; border: 1px solid #2d6a77; border-radius: 4px; color: #9aeaf4; cursor: pointer; font: inherit; font-size: calc(12px * var(--scale)); padding: 5px 9px; }
+    .status-pane { width: 100%; display: grid; align-content: start; gap: 14px; padding: 16px; }
+    .card { background: rgba(26,36,51,.42); border: 1px solid rgba(147,175,205,.1); border-radius: 5px; padding: calc(16px * var(--scale)); }
+    .section { color: #86d9e5; font-size: calc(14px * var(--scale)); font-weight: 700; margin-bottom: 10px; }
+    .row { display: grid; grid-template-columns: 7em 1fr; gap: 10px; margin: 9px 0; font-size: calc(16px * var(--scale)); }
+    .row span:first-child { color: #91a4be; }
+    .actions { display: grid; gap: 10px; }
+    .action { border: 0; border-radius: 4px; padding: calc(13px * var(--scale)); background: #172232; color: #e5f1ff; font-size: calc(16px * var(--scale)); cursor: pointer; }
+    .toggle { color: #d4e2f1; font-size: calc(15px * var(--scale)); }
+    .archive { width: 100%; display: grid; grid-template-columns: minmax(280px, var(--list-width)) 1fr; gap: 14px; min-height: 0; }
+    .list { min-height: 0; overflow-y: auto; background: rgba(11,17,27,.65); border: 1px solid rgba(93,182,197,.12); padding: 8px; }
+    .item { width: 100%; border: 0; border-radius: 4px; padding: 11px; text-align: left; background: transparent; color: inherit; cursor: pointer; display: grid; gap: 6px; }
+    .item.active { background: rgba(38,68,81,.92); }
+    .item-top { display: flex; justify-content: space-between; gap: 8px; font-size: calc(15px * var(--scale)); color: #eaf4ff; }
+    .badge { color: #ffd26e; font-size: calc(12px * var(--scale)); white-space: nowrap; }
+    .item-detail { color: #9aabc1; font-size: calc(13px * var(--scale)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item-note { margin: 0 4px; padding: 5px 9px; border-radius: 3px; color: #9aabc1; font-size: calc(14px * var(--scale)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item-note.has-note { background: rgba(91,70,14,.92); color: #ffe280; font-weight: 600; }
+    .detail { min-height: 0; display: grid; grid-template-rows: minmax(260px, 56%) minmax(0,1fr); border: 1px solid rgba(93,182,197,.16); background: rgba(26,36,51,.42); overflow: hidden; }
+    .shot { min-height: 0; display: grid; place-items: center; background: #081019; }
+    .shot img { width: 100%; height: 100%; object-fit: contain; }
+    .placeholder { color: #7d8b9e; font-size: 15px; }
+    .detail-info { overflow-y: auto; padding: 16px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 16px; font-size: calc(15px * var(--scale)); }
+    .detail-grid strong { display: block; color: #91a4be; font-weight: 400; font-size: .82em; margin-bottom: 3px; }
+    .note { margin-top: 13px; border-top: 1px solid rgba(147,175,205,.14); padding-top: 10px; }
+    .note-label { display: flex; align-items: center; justify-content: space-between; color: #86d9e5; font-weight: 700; font-size: calc(14px * var(--scale)); }
+    .note-edit { background: transparent; border: 0; color: #9aeaf4; font: inherit; cursor: pointer; }
+    .note-view { margin-top: 7px; min-height: 35px; padding: 8px 11px; border-radius: 3px; background: rgba(91,70,14,.9); color: #ffe280; font-size: calc(17px * var(--scale)); line-height: 1.35; font-weight: 600; }
+    .note-view.empty { background: rgba(26,36,51,.55); color: #9aabc1; font-weight: 400; }
+    textarea { width: 100%; min-height: 36px; max-height: 76px; margin-top: 7px; resize: none; border-radius: 4px; border-color: #33465f; background: #111926; color: #eaf4ff; box-sizing: border-box; font: inherit; font-size: calc(17px * var(--scale)); }
+    .detail-actions { display: flex; gap: 8px; margin-top: 9px; }
+    footer { padding: 10px 16px 2px; color: #91a4be; font-size: calc(13px * var(--scale)); text-align: center; }
+    .empty { grid-column: 1/-1; display: grid; place-items: center; color: #91a4be; }
+  </style>
+</head>
+<body>
+<div class=toolbar>
+  <strong>布局预览</strong>
+  <label>分辨率 <select id=resolution><option>1280×720</option><option>1600×900</option><option>1920×1080</option><option>2560×1440</option><option>自定义</option></select></label>
+  <label>宽 <input id=width type=number min=640 max=3840 value=1280></label>
+  <label>高 <input id=height type=number min=480 max=2160 value=720></label>
+  <button id=reload>重载数据</button><span id=root></span>
+</div>
+<div class=stage><div id=screen class=screen></div></div>
+<script>
+let state, selected = null, notes = {}, tab = 'archive', noteEditing = false, sortMode = 'captured';
+const screenEl = document.getElementById('screen');
+document.getElementById('resolution').onchange = event => { if (event.target.value !== '自定义') [width.value,height.value] = event.target.value.split('×'); render(); };
+document.getElementById('width').oninput = render;
+document.getElementById('height').oninput = render;
+document.getElementById('reload').onclick = load;
+async function load() { state = await (await fetch('/api/state')).json(); if (!selected) selected = state.selection?.generation; state.checkpoints.forEach(x => notes[x.generation] ??= x.note || ''); render(); }
+function render() {
+  const width = Math.max(640,Math.min(3840,+document.getElementById('width').value || 1280));
+  const height = Math.max(480,Math.min(2160,+document.getElementById('height').value || 720));
+  screenEl.style.width = width+'px'; screenEl.style.height = height+'px';
+  screenEl.style.setProperty('--scale',(height/720).toFixed(3)); screenEl.style.setProperty('--list-width',(width*.26)+'px');
+  document.getElementById('root').textContent = state?.checkpointRoot || '';
+  if (!state) return;
+  const manual = sortArchive(state.checkpoints.filter(x => x.kind === 'Manual'));
+  const current = manual.find(x => x.generation === selected) || manual[0];
+  screenEl.innerHTML = `<div class=surface><header><div><h1>Safe Dialogue Tools</h1><h2>对话安全与预测工具</h2></div><div class=status><i class=dot></i>${state.state.status}<button class=close-panel>关闭面板</button></div></header><div class=tabs><button class="tab ${tab==='status'?'active':''}" data-tab=status>状态</button><button class="tab ${tab==='archive'?'active':''}" data-tab=archive>存档库</button></div><main>${tab==='status'?statusHtml():current?archiveHtml(manual,current):'<div class=empty>暂无手动存档</div>'}</main><footer>Home 收起 · F6 读取当前目标</footer></div>`;
+  screenEl.querySelectorAll('[data-tab]').forEach(item => item.onclick = () => { tab = item.dataset.tab; render(); });
+  const sort = screenEl.querySelector('.sort'); if (sort) sort.onclick = () => { sortMode = sortMode === 'captured' ? 'game' : 'captured'; render(); };
+  screenEl.querySelectorAll('.item').forEach(item => item.onclick = () => { selected = item.dataset.generation; noteEditing = false; render(); });
+  const edit = screenEl.querySelector('.note-edit'); if (edit) edit.onclick = () => { noteEditing = true; render(); };
+  const noteView = screenEl.querySelector('.note-view'); if (noteView) noteView.onclick = () => { noteEditing = true; render(); }; const note = screenEl.querySelector('textarea'); if (note) { note.oninput = () => notes[current.generation] = note.value; note.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); noteEditing = false; render(); } }; note.onblur = () => { noteEditing = false; render(); }; }
+  const close = screenEl.querySelector('.close-panel'); if (close) close.onclick = () => { tab = 'archive'; noteEditing = false; screenEl.innerHTML = ''; };
+}
+function statusHtml() { return `<section class=status-pane><div class=card><div class=section>状态</div><div class=row><span>运行模式</span><span>${state.state.mode}</span></div><div class=row><span>对话前</span><span>${state.state.dialogueCheckpoint}</span></div><div class=row><span>读取目标</span><span>${state.state.selectedCheckpoint||'未选择'}</span></div><p class=blocked>${state.state.blocked}</p></div><div class=card><div class=section>快速操作</div><div class=actions><button class=action>快速保存（F5）</button><button class=action>读取检查点（F6）</button></div></div><div class=card><div class=section>辅助</div><label class=toggle><input type=checkbox checked> 悬停显示判定与未来预览</label></div></section>`; }
+function archiveHtml(items,current) { const currentNote=notes[current.generation]||''; return `<section class=archive><div class=list><div class=list-header><span>${state.state.archiveCount} 份手动存档</span><button class=sort>${sortMode==='captured'?'按存档时间':'按游戏时间'}</button></div>${items.map(item => { const note=notes[item.generation]||''; return `<button class="item ${item.generation===current.generation?'active':''}" data-generation=${item.generation}><span class=item-top><span>${text(item.capturedAt,'时间未知')}</span><span class=badge>${item.selected?'读取目标':note?'已备注':item.hasScreenshot?'F5 历史':'无截图'}</span></span><span class=item-detail>${text(item.mapName,'未知地图')} · Lv.${item.playerLevel??'?'} · 第${item.round??'?'}周目 第${item.day??'?'}天</span><span class="item-note ${note?'has-note':''}">${note||'未写备注'}</span></button>` }).join('')}</div><article class=detail><div class=shot>${itemImage(current)}</div><div class=detail-info><div class=detail-grid><span><strong>保存时间</strong>${text(current.capturedAt,'时间未知')}</span><span><strong>地图</strong>${text(current.mapName,'未知地图')}</span><span><strong>等级</strong>Lv.${current.playerLevel??'?'}</span><span><strong>游戏时间</strong>第${current.round??'?'}周目 第${current.day??'?'}天</span><span><strong>读取状态</strong>${current.selected?'当前读取目标':'未设为读取目标'}</span><span><strong>截图</strong>${current.hasScreenshot?'1280×720 截图（旧档可能 320×180）':'不可用'}</span></div><div class=note><div class=note-label><span>备注</span></div>${noteEditing?`<textarea>${currentNote}</textarea>`:`<div class="note-view ${currentNote?'':'empty'}">${currentNote||'未写备注'}</div>`}<div class=detail-actions><button class=action>备注仅预览，不写回</button></div></div></div></article></section>`; }
+function sortArchive(items) { if (sortMode === 'captured') return [...items].sort((a,b) => Date.parse(b.capturedAt)-Date.parse(a.capturedAt)); const known = items.filter(x => x.round != null && x.day != null); const unknown = items.filter(x => x.round == null || x.day == null); return known.sort((a,b) => (b.round-a.round) || (b.day-a.day) || Date.parse(b.capturedAt)-Date.parse(a.capturedAt)).concat(unknown); }
+function itemImage(item) { return item.hasScreenshot ? `<img src="${item.screenshotUrl}" alt="存档截图">` : '<span class=placeholder>截图不可用</span>'; }
+function text(value,fallback) { return value ? String(value).replace('T',' ') : fallback; }
+load();
+</script>
+</body>
+</html>
+

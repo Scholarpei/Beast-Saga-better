@@ -9,6 +9,8 @@ verification/
 tools/*
 !tools/*.ps1
 !tools/*.py
+!tools/PanelPreview/
+!tools/PanelPreview/**
 .local/
 AGENTS.md
 MEMORY.md

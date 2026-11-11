@@ -52,34 +52,82 @@ internal static class NativeSave
 
     internal static SaveInfo ReadInfo(string folder) => new ES3File(Path.Combine(folder, "save.es3")).Load<SaveInfo>(SaveManager.SaveInfoData);
 
+    internal static TimeSaveData ReadTime(string folder) => new ES3File(Path.Combine(folder, "save.es3")).Load<TimeSaveData>(SaveManager.SaveTime);
+
     internal static void WriteThumbnail(string folder)
     {
         var path = Path.Combine(folder, "thumbnail.png");
+        const int thumbnailWidth = 1280;
+        var thumbnailHeight = Math.Max(720, (int)Math.Round(thumbnailWidth * Screen.height / (float)Screen.width));
+        var render = RenderTexture.GetTemporary(thumbnailWidth, thumbnailHeight, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        var previous = RenderTexture.active;
+        var thumbnail = new Texture2D(thumbnailWidth, thumbnailHeight, TextureFormat.RGBA32, false);
+        try
+        {
+            RenderTexture.active = render;
+            GL.Clear(true, true, Color.clear);
+            foreach (var camera in Camera.allCameras.Where(camera => camera != null && camera.enabled && camera.gameObject.activeInHierarchy)
+                         .OrderBy(camera => camera.depth))
+            {
+                var previousTarget = camera.targetTexture;
+                camera.targetTexture = render;
+                camera.Render();
+                camera.targetTexture = previousTarget;
+            }
+            RenderTexture.active = render;
+            thumbnail.ReadPixels(new Rect(0, 0, thumbnailWidth, thumbnailHeight), 0, 0, false);
+            thumbnail.Apply(false, false);
+            File.WriteAllBytes(path, ImageConversion.EncodeToPNG(thumbnail));
+        }
+        finally
+        {
+            RenderTexture.active = previous;
+            RenderTexture.ReleaseTemporary(render);
+            UnityEngine.Object.Destroy(thumbnail);
+        }
+    }
+
+    internal static void WriteThumbnailFromScreen(string folder)
+    {
+        var path = Path.Combine(folder, "thumbnail.png");
+        const int thumbnailWidth = 1280;
+        var thumbnailHeight = Math.Max(720, (int)Math.Round(thumbnailWidth * Screen.height / (float)Screen.width));
         var captured = new Texture2D(Screen.width, Screen.height, TextureFormat.RGBA32, false);
+        var render = RenderTexture.GetTemporary(thumbnailWidth, thumbnailHeight, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+        var previous = RenderTexture.active;
+        var thumbnail = new Texture2D(thumbnailWidth, thumbnailHeight, TextureFormat.RGBA32, false);
         try
         {
             captured.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0, false);
             captured.Apply(false, false);
-            var render = RenderTexture.GetTemporary(320, 180, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
-            var previous = RenderTexture.active;
-            var thumbnail = new Texture2D(320, 180, TextureFormat.RGBA32, false);
-            try
-            {
-                Graphics.Blit(captured, render);
-                RenderTexture.active = render;
-                thumbnail.ReadPixels(new Rect(0, 0, 320, 180), 0, 0, false);
-                thumbnail.Apply(false, false);
-                File.WriteAllBytes(path, ImageConversion.EncodeToPNG(thumbnail));
-            }
-            finally
-            {
-                RenderTexture.active = previous;
-                RenderTexture.ReleaseTemporary(render);
-                UnityEngine.Object.Destroy(thumbnail);
-            }
+            Graphics.Blit(captured, render);
+            RenderTexture.active = render;
+            thumbnail.ReadPixels(new Rect(0, 0, thumbnailWidth, thumbnailHeight), 0, 0, false);
+            thumbnail.Apply(false, false);
+            File.WriteAllBytes(path, ImageConversion.EncodeToPNG(thumbnail));
         }
-        finally { UnityEngine.Object.Destroy(captured); }
+        finally
+        {
+            RenderTexture.active = previous;
+            RenderTexture.ReleaseTemporary(render);
+            UnityEngine.Object.Destroy(thumbnail);
+            UnityEngine.Object.Destroy(captured);
+        }
     }
+
+    internal static void WriteThumbnailWithoutPanel(string folder)
+    {
+        try
+        {
+            WriteThumbnail(folder);
+        }
+        catch (Exception renderError)
+        {
+            Plugin.Logger.LogWarning("离屏游戏画面截取失败，回退到屏幕读取：" + renderError.Message);
+            WriteThumbnailFromScreen(folder);
+        }
+    }
+
 
     internal static void Validate(string folder)
     {

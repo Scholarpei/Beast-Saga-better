@@ -13,7 +13,7 @@ internal static class CheckpointHistoryTests
         {
             var workingRoot = Path.Combine(root, "working");
             var store = new CheckpointStore(workingRoot, "v1", maxManualCheckpoints: 6, maxPreDialogueCheckpoints: 3);
-            string Create(CheckpointKind kind, string map = "禾兴城", int level = 12, int round = 1, bool screenshot = true)
+            string Create(CheckpointKind kind, string map = "禾兴城", int level = 12, int round = 1, bool screenshot = true, int day = 1)
             {
                 return store.Create(
                     path =>
@@ -22,7 +22,7 @@ internal static class CheckpointHistoryTests
                         if (screenshot) File.WriteAllText(Path.Combine(path, "thumbnail.png"), "png");
                     },
                     _ => { },
-                    new CheckpointMetadata(kind, DateTime.Now, map, level, round, screenshot ? "thumbnail.png" : null));
+                    new CheckpointMetadata(kind, DateTime.Now, map, level, round, day, screenshot ? "thumbnail.png" : null));
             }
 
             Test("v2 checkpoints retain capture metadata and thumbnail integrity", () =>
@@ -36,7 +36,7 @@ internal static class CheckpointHistoryTests
                         File.WriteAllText(Path.Combine(path, "thumbnail.png"), "png");
                     },
                     _ => { },
-                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "竹林", 18, 2, "thumbnail.png"));
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "竹林", 18, 2, 9, "thumbnail.png"));
                 var record = integrityStore.List().Single(item => item.Generation == generation);
                 Require(record.Kind == CheckpointKind.Manual && record.MapName == "竹林" && record.PlayerLevel == 18 && record.Round == 2);
                 Require(record.ScreenshotPath is not null && File.Exists(record.ScreenshotPath));
@@ -50,7 +50,7 @@ internal static class CheckpointHistoryTests
                 var notesStore = new CheckpointStore(notesRoot, "v1");
                 var generation = notesStore.Create(
                     path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
-                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "禾兴城", 12, 1, null));
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "禾兴城", 12, 1, 1, null));
                 notesStore.SetNote(generation, new string('备', 600));
                 Require(notesStore.Notes()[generation].Length == 500, notesStore.Notes()[generation].Length.ToString());
                 notesStore.SetNote(generation, "  boss 战前  ");
@@ -73,7 +73,7 @@ internal static class CheckpointHistoryTests
                         File.WriteAllText(Path.Combine(path, "thumbnail.png"), "png");
                     },
                     _ => { },
-                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "轻量列表", 22, 3, "thumbnail.png"));
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "轻量列表", 22, 3, 11, "thumbnail.png"));
                 File.AppendAllText(Path.Combine(archiveRoot, generation, "save.es3"), "tampered");
                 var cheapRecord = archiveStore.List(verifyPayloads: false).Single(item => item.Generation == generation);
                 Require(cheapRecord.MapName == "轻量列表");
@@ -166,21 +166,38 @@ internal static class CheckpointHistoryTests
                 Require(CommandPanelState.Tab == CommandPanelTab.Status);
                 CommandPanelState.SelectTab(CommandPanelTab.Archive);
                 Require(CommandPanelState.Tab == CommandPanelTab.Archive);
-                var summary = new CheckpointSummary("generation", CheckpointKind.Manual, DateTime.Now, "禾兴城", 20, 2, true, "path", "备注", true);
+                var summary = new CheckpointSummary("generation", CheckpointKind.Manual, DateTime.Now, "禾兴城", 20, 2, 9, true, "path", "备注", true);
                 var state = new CommandPanelState.State(true, false, false, false, false, true, true, null, "generation",
                     null, new[] { summary }, summary);
                 Require(state.ArchiveCountText == "1 份手动存档");
-                Require(summary.DisplayLine().Contains("禾兴城") && summary.DisplayLine().Contains("Lv.20") && summary.DisplayLine().Contains("第2周目"));
+                Require(summary.DisplayLine().Contains("禾兴城") && summary.DisplayLine().Contains("Lv.20") && summary.DisplayLine().Contains("第2周目 第9天"));
                 Require(summary.NoteText() == "备注" && summary.BadgeText() == "已备注");
             });
 
             Test("archive rows split long capture information across two readable lines", () =>
             {
                 var captured = new DateTime(2026, 11, 11, 12, 34, 56);
-                var summary = new CheckpointSummary("generation", CheckpointKind.Manual, captured, "禾兴铁匠铺", 10, 1,
+                var summary = new CheckpointSummary("generation", CheckpointKind.Manual, captured, "禾兴铁匠铺", 10, 1, 3,
                     false, null, "长备注", false);
                 Require(summary.DisplayTopLine() == "2026/11/11 12:34:56");
-                Require(summary.DisplayDetailLine() == "禾兴铁匠铺 · Lv.10 · 第1周目");
+                Require(summary.DisplayDetailLine() == "禾兴铁匠铺 · Lv.10 · 第1周目 第3天");
+                var unknown = summary with { Round = null, Day = null };
+                Require(unknown.DisplayDetailLine() == "禾兴铁匠铺 · Lv.10 · 第?周目 第?天");
+            });
+
+            Test("archive sorting supports capture time and game time", () =>
+            {
+                var older = new CheckpointSummary("older", CheckpointKind.Manual, new DateTime(2026, 1, 1), "地图", 10, 1, 10, false, null, null, false);
+                var newer = older with { Generation = "newer", CapturedAt = new DateTime(2026, 1, 2), Day = 2 };
+                var laterGameTime = older with { Generation = "later", CapturedAt = new DateTime(2025, 12, 1), Round = 2, Day = 80 };
+                var unknownTime = older with { Generation = "unknown", CapturedAt = default, Round = null, Day = null };
+                var source = new[] { unknownTime, newer, laterGameTime, older };
+                Require(CheckpointArchiveSort.Apply(source, CheckpointArchiveSortMode.CapturedTime).Select(item => item.Generation)
+                    .SequenceEqual(new[] { "newer", "older", "later", "unknown" }),
+                    string.Join(",", CheckpointArchiveSort.Apply(source, CheckpointArchiveSortMode.CapturedTime).Select(item => item.Generation)));
+                Require(CheckpointArchiveSort.Apply(source, CheckpointArchiveSortMode.GameTime).Select(item => item.Generation)
+                    .SequenceEqual(new[] { "later", "newer", "older", "unknown" }),
+                    string.Join(",", CheckpointArchiveSort.Apply(source, CheckpointArchiveSortMode.GameTime).Select(item => item.Generation)));
             });
 
             Test("command panel is larger and blocks game clicks inside its bounds", () =>
@@ -238,7 +255,7 @@ internal static class CheckpointHistoryTests
                 var create = (string map) => metadataStore.Create(
                     path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"),
                     _ => { },
-                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, map, 20, 1, null));
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, map, 20, 1, 1, null));
 
                 var invalidKind = create("无效类型");
                 RewriteMetadata(metadataRoot, "v1", invalidKind, metadata => metadata with { Kind = (CheckpointKind)99 });

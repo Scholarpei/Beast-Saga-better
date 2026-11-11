@@ -42,9 +42,11 @@ public static class CommandPanelState
             : "暂无手动存档";
     }
 
-    public static void ToggleHome(bool focused, bool inputFieldFocused)
+    public static void ToggleHome(bool focused, bool inputFieldFocused, bool canShowPanel = true)
     {
-        if (focused && !inputFieldFocused) Open = !Open;
+        if (!focused || inputFieldFocused) return;
+        if (!canShowPanel) Open = false;
+        else Open = !Open;
     }
 
     public sealed record Actions(Action Save, Action Load);
@@ -86,16 +88,39 @@ public static class CommandPanelState
 
 public enum CommandPanelTab { Status, Archive }
 
+public enum CheckpointArchiveSortMode { CapturedTime, GameTime }
+
+public static class CheckpointArchiveSort
+{
+    public static IReadOnlyList<CheckpointSummary> Apply(
+        IEnumerable<CheckpointSummary> archive, CheckpointArchiveSortMode mode) =>
+        mode switch
+        {
+            CheckpointArchiveSortMode.CapturedTime => archive
+                .OrderByDescending(item => item.CapturedAt)
+                .ThenByDescending(item => item.Generation, StringComparer.Ordinal)
+                .ToArray(),
+            CheckpointArchiveSortMode.GameTime => archive
+                .OrderBy(item => item.Round is null || item.Day is null)
+                .ThenByDescending(item => item.Round ?? int.MinValue)
+                .ThenByDescending(item => item.CapturedAt)
+                .ThenByDescending(item => item.Day ?? int.MinValue)
+                .ThenByDescending(item => item.Generation, StringComparer.Ordinal)
+                .ToArray(),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode))
+        };
+}
+
 public static class CheckpointSummaryText
 {
     public static string DisplayLine(this CheckpointSummary summary) =>
-        $"{summary.CapturedAt:yyyy/MM/dd HH:mm:ss} · {summary.MapName ?? "未知地图"} · Lv.{summary.PlayerLevel?.ToString() ?? "?"} · 第{summary.Round?.ToString() ?? "?"}周目";
+        $"{summary.CapturedAt:yyyy/MM/dd HH:mm:ss} · {summary.MapName ?? "未知地图"} · Lv.{summary.PlayerLevel?.ToString() ?? "?"} · 第{summary.Round?.ToString() ?? "?"}周目 第{summary.Day?.ToString() ?? "?"}天";
 
     public static string DisplayTopLine(this CheckpointSummary summary) =>
         summary.CapturedAt == default ? "时间未知" : summary.CapturedAt.ToString("yyyy/MM/dd HH:mm:ss");
 
     public static string DisplayDetailLine(this CheckpointSummary summary) =>
-        $"{summary.MapName ?? "未知地图"} · Lv.{summary.PlayerLevel?.ToString() ?? "?"} · 第{summary.Round?.ToString() ?? "?"}周目";
+        $"{summary.MapName ?? "未知地图"} · Lv.{summary.PlayerLevel?.ToString() ?? "?"} · 第{summary.Round?.ToString() ?? "?"}周目 第{summary.Day?.ToString() ?? "?"}天";
 
     public static string NoteText(this CheckpointSummary summary) =>
         string.IsNullOrWhiteSpace(summary.Note) ? "未写备注" : summary.Note!;
@@ -108,8 +133,27 @@ public readonly record struct CommandPanelLayout(float X, float Y, float Width, 
 {
     public static CommandPanelLayout Create(int screenWidth, int screenHeight)
     {
-        var width = Math.Clamp(screenWidth * 0.72f, 0, Math.Max(0, screenWidth - 32));
-        var height = Math.Clamp(screenHeight * 0.94f, 0, Math.Max(0, screenHeight - 24));
-        return new((screenWidth - width) / 2f, (screenHeight - height) / 2f, width, height);
+        return new(0, 0, Math.Max(0, screenWidth), Math.Max(0, screenHeight));
+    }
+}
+
+public readonly record struct CommandPanelMetrics(
+    float Scale,
+    float ArchiveListWidth,
+    float DetailPreviewHeight,
+    float ArchiveRowHeight,
+    float ArchiveRowSpacing,
+    float MajorButtonHeight)
+{
+    public static CommandPanelMetrics Create(CommandPanelLayout layout)
+    {
+        var scale = Math.Clamp(layout.Height / 720f, 0.72f, 1.35f);
+        return new(
+            scale,
+            Math.Clamp(layout.Width * 0.26f, 280f, Math.Min(760f, layout.Width * 0.38f)),
+            Math.Clamp(layout.Height * 0.56f, 260f, Math.Min(900f, layout.Height * 0.64f)),
+            Math.Clamp(96f * scale, 84f, 136f),
+            Math.Max(6f, 9f * scale),
+            Math.Clamp(46f * scale, 44f, 64f));
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PixelCrushers.DialogueSystem;
+using SafeDialogueTools.Core;
 using UnityEngine;
 
 namespace SafeDialogueTools;
@@ -25,6 +26,17 @@ internal static class TestBridge
             else if (command == "save") Plugin.SavePressed();
             else if (command == "load") Plugin.LoadPressed();
             else if (command == "enable") Plugin.EnableCheckpoints.Value = true;
+            else if (command == "panel")
+            {
+                var canShowPanel = Plugin.CheckpointsActive && Plugin.UnsafeReason(true) is null or "正在对话";
+                CommandPanelState.ToggleHome(true, false, canShowPanel);
+                if (!canShowPanel) Plugin.Tip("请在游戏中打开面板");
+                else if (CommandPanelState.Open)
+                {
+                    Plugin.RefreshPanelSelectedCheckpoint();
+                    Plugin.RefreshPanelArchive();
+                }
+            }
             else if (command.StartsWith("note:"))
             {
                 var payload = command[5..];
@@ -128,6 +140,7 @@ internal static class TestBridge
             ["checkpoint"] = Plugin.DialogueCheckpoint, ["loading"] = Plugin.Loading,
             ["faulted"] = Plugin.Faulted, ["selected"] = Plugin.Store?.Selected(),
             ["archiveCount"] = Plugin.PanelArchive?.Count,
+            ["panelOpen"] = CommandPanelState.Open,
             ["conversation"] = DialogueManager.hasInstance ? DialogueManager.lastConversationID : null
         };
         values["guiFrames"] = Plugin.GuiFrames;

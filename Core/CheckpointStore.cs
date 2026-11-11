@@ -6,11 +6,11 @@ namespace SafeDialogueTools.Core;
 
 public enum CheckpointKind { Manual, PreDialogue, Legacy }
 
-public sealed record CheckpointMetadata(CheckpointKind Kind, DateTime CapturedAt, string MapName, int PlayerLevel, int Round, string? Screenshot);
+public sealed record CheckpointMetadata(CheckpointKind Kind, DateTime CapturedAt, string MapName, int PlayerLevel, int Round, int Day, string? Screenshot);
 
 public sealed record CheckpointSummary(
     string Generation, CheckpointKind Kind, DateTime CapturedAt, string? MapName, int? PlayerLevel, int? Round,
-    bool HasScreenshot, string? ScreenshotPath, string? Note, bool Selected);
+    int? Day, bool HasScreenshot, string? ScreenshotPath, string? Note, bool Selected);
 
 public sealed class CheckpointStore
 {
@@ -171,7 +171,7 @@ public sealed class CheckpointStore
                 var screenshotPath = screenshot is null ? null : Path.Combine(root, name!, screenshot);
                 summaries.Add(new CheckpointSummary(
                     name!, metadata?.Kind ?? CheckpointKind.Legacy, metadata?.CapturedAt ?? default,
-                    metadata?.MapName, metadata?.PlayerLevel, metadata?.Round,
+                    metadata?.MapName, metadata?.PlayerLevel, metadata?.Round, metadata?.Day,
                     screenshot is not null && manifest.Files.ContainsKey(screenshot),
                     screenshotPath, notes.TryGetValue(name!, out var note) ? note : null,
                     selected == name));
@@ -228,8 +228,10 @@ public sealed class CheckpointStore
     {
         var manifestPath = Path.Combine(root, generation, "manifest.json");
         CheckFile(manifestPath);
-        try { return JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath)) ?? throw new InvalidDataException("Empty manifest"); }
-        catch (JsonException error) { throw new InvalidDataException("Invalid manifest", error); }
+        var metadata = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath));
+        if (metadata?.Metadata is not null && metadata.Metadata.Day == 0)
+            metadata = metadata with { Metadata = metadata.Metadata with { Day = 1 } };
+        return metadata ?? throw new InvalidDataException("Empty manifest");
     }
 
     private CheckpointKind ReadKind(string generation)

@@ -594,6 +594,15 @@ try
         CommandPanelState.ToggleHome(false, false);
         Require(!CommandPanelState.Open);
     });
+    Test("home stays closed outside gameplay and the menu reports guidance", () =>
+    {
+        CommandPanelState.Open = false;
+        CommandPanelState.ToggleHome(true, false, canShowPanel: false);
+        Require(!CommandPanelState.Open);
+        CommandPanelState.Open = true;
+        CommandPanelState.ToggleHome(true, false, canShowPanel: false);
+        Require(!CommandPanelState.Open);
+    });
     Test("panel state distinguishes restricted, available and faulted tools", () =>
     {
         var restricted = new CommandPanelState.State(false, false, false, false, false, true, false, null, null, null);
@@ -626,17 +635,30 @@ try
         CommandPanelState.RunSave(dialogue, actions);
         Require(calls.Count == 0, string.Join(",", calls));
     });
-    Test("panel layout stays centered and inside narrow screens", () =>
+    Test("panel layout fills the whole screen", () =>
     {
         var layout = CommandPanelLayout.Create(1920, 1080);
-        Require(layout.Width >= 620 && layout.X >= 100 && layout.Y > 0, $"{layout.X},{layout.Y},{layout.Width}");
-        Require(layout.X + layout.Width <= 1920 && layout.Y + layout.Height <= 1080);
+        Require(layout.X == 0 && layout.Y == 0 && layout.Width == 1920 && layout.Height == 1080,
+            $"{layout.X},{layout.Y},{layout.Width},{layout.Height}");
+        Require(layout.X + layout.Width == 1920 && layout.Y + layout.Height == 1080);
         var narrow = CommandPanelLayout.Create(800, 600);
-        Require(narrow.Width >= 320 && narrow.X >= 16 && narrow.Y >= 8, $"{narrow.X},{narrow.Y},{narrow.Width}");
-        Require(narrow.X + narrow.Width <= 800 && narrow.Y + narrow.Height <= 600);
+        Require(narrow.X == 0 && narrow.Y == 0 && narrow.Width == 800 && narrow.Height == 600,
+            $"{narrow.X},{narrow.Y},{narrow.Width},{narrow.Height}");
+        Require(narrow.X + narrow.Width == 800 && narrow.Y + narrow.Height == 600);
         var tiny = CommandPanelLayout.Create(320, 480);
         Require(tiny.X >= 0 && tiny.Y >= 0 && tiny.X + tiny.Width <= 320 && tiny.Y + tiny.Height <= 480,
             $"{tiny.X},{tiny.Y},{tiny.Width},{tiny.Height}");
+    });
+    Test("full-screen archive metrics scale the list and large preview", () =>
+    {
+        var hd = CommandPanelMetrics.Create(CommandPanelLayout.Create(1280, 720));
+        Require(hd.Scale is >= 0.85f and <= 1.05f, "scale " + hd);
+        Require(hd.ArchiveListWidth is >= 320f and <= 460f, "list " + hd);
+        Require(hd.DetailPreviewHeight is >= 380f and <= 470f, "preview " + hd);
+        Require(hd.ArchiveRowHeight >= 84f && hd.ArchiveRowSpacing >= 6f && hd.MajorButtonHeight >= 44f, "rows " + hd);
+        var fourK = CommandPanelMetrics.Create(CommandPanelLayout.Create(3840, 2160));
+        Require(fourK.Scale > hd.Scale && fourK.ArchiveListWidth > hd.ArchiveListWidth &&
+                fourK.DetailPreviewHeight > hd.DetailPreviewHeight && fourK.ArchiveRowHeight > hd.ArchiveRowHeight);
     });
     Test("single-check parser rejects script suffixes", () =>
         Require(CheckPreview.Parse("IsPlayerPro('感知','大于等于',15); AwardExp(100)") is null));
