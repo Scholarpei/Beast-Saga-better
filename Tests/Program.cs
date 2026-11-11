@@ -603,6 +603,19 @@ try
         CommandPanelState.ToggleHome(true, false, canShowPanel: false);
         Require(!CommandPanelState.Open);
     });
+    Test("starting a load closes the panel and releases pointer capture", () =>
+    {
+        CommandPanelState.Open = true;
+        CommandPanelState.SelectTab(CommandPanelTab.Archive);
+        CommandPanelState.SetPointerBounds(0, 0, 1920, 1080);
+        Require(CommandPanelState.IsPointerBlocked(10, 10));
+        CommandPanelState.Close();
+        Require(!CommandPanelState.Open);
+        Require(!CommandPanelState.IsPointerBlocked(10, 10));
+        Require(CommandPanelState.Tab == CommandPanelTab.Archive);
+        CommandPanelState.Reset();
+        Require(CommandPanelState.Tab == CommandPanelTab.Status);
+    });
     Test("panel state distinguishes restricted, available and faulted tools", () =>
     {
         var restricted = new CommandPanelState.State(false, false, false, false, false, true, false, null, null, null);

@@ -66,9 +66,15 @@ public static class CommandPanelState
         Tab = tab;
     }
 
-    public static void Reset()
+    public static void Close()
     {
         Open = false;
+        ClearPointerBounds();
+    }
+
+    public static void Reset()
+    {
+        Close();
         Tab = CommandPanelTab.Status;
     }
 

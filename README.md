@@ -60,7 +60,7 @@
 
 ## 快捷面板
 
-按 **Home** 可以打开或收起工具面板。面板分为“状态”和“存档库”两页：状态页显示运行模式、检查点、读取目标、暂不可用原因和快速操作；存档库专注浏览手动 F5 历史、放大预览、写备注并选择读取目标。面板按钮复用原有安全检查，不会绕过存读档限制；按键可在配置文件的 `Keys` 分区调整。
+按 **Home** 可以打开或收起工具面板。面板分为“状态”和“存档库”两页：状态页显示运行模式、检查点、读取目标、暂不可用原因和快速操作；存档库专注浏览手动 F5 历史、放大预览、写备注并选择读取目标。面板按钮复用原有安全检查，不会绕过存读档限制；按键可在配置文件的 `Keys` 分区调整。按 **F6** 读取检查点前会自动收起面板，避免面板停留在场景重载过程中。
 
 插件历史保存在 `SafeDialogueToolsData/checkpoints`，不会占用或修改游戏原生的 `Auto*`、`Note*`、`quick*` 存档位及其截图。保留数量和缩略截图可在配置文件的 `Checkpoints` 分区调整。
 
@@ -71,6 +71,16 @@
 正式游戏根目录中的 `BepInEx/plugins/SafeDialogueTools/SafeDialogueTools.dll` 是当前已部署版本。对话前 SL 功能需要配置开启，并要求游戏根目录存在 `SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED` 授权标记；删除标记或关闭配置即可回到原生 F5/F6 行为。
 
 ## 安装与卸载
+
+### 一键部署
+
+开发修改后，从项目根目录运行：
+
+```powershell
+./tools/deploy-production.ps1
+```
+
+脚本会先运行完整测试和 Release 构建，确认游戏已退出，备份正式目录里的旧 DLL，再复制新 DLL 到 `BepInEx/plugins/SafeDialogueTools/SafeDialogueTools.dll` 和 `dist/`，并校验部署前后的哈希。已自行跑过测试或构建时，可加 `-SkipTests`、`-SkipBuild`。
 
 ## 快速测试流程
 

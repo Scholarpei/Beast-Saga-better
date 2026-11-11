@@ -28,14 +28,7 @@ internal static class TestBridge
             else if (command == "enable") Plugin.EnableCheckpoints.Value = true;
             else if (command == "panel")
             {
-                var canShowPanel = Plugin.CheckpointsActive && Plugin.UnsafeReason(true) is null or "正在对话";
-                CommandPanelState.ToggleHome(true, false, canShowPanel);
-                if (!canShowPanel) Plugin.Tip("请在游戏中打开面板");
-                else if (CommandPanelState.Open)
-                {
-                    Plugin.RefreshPanelSelectedCheckpoint();
-                    Plugin.RefreshPanelArchive();
-                }
+                Plugin.TogglePanel();
             }
             else if (command.StartsWith("note:"))
             {
@@ -237,9 +230,9 @@ internal static class LoadDiagnosticPatch
 {
     private static void Postfix(SaveManager._LoadSaveGame_d__111 __instance, bool __result)
     {
-        if (!Plugin.TestMode) return;
         if (!__result && Plugin.Loading && !Plugin.PendingNativeLoad &&
             __instance.__4__this.fileName == Path.Combine(Plugin.LoadWork, "save.es3")) Plugin.NativeLoadCompleted = true;
+        if (!Plugin.TestMode) return;
         var status = "state=" + __instance.__1__state + " yield=" + __instance.__2__current?.GetIl2CppType().FullName;
         if (status == TestBridge.CoroutineStatus) return;
         TestBridge.CoroutineStatus = status;

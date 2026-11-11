@@ -280,16 +280,39 @@ public sealed class Plugin : BasePlugin
             foreach (var file in Directory.GetFiles(source).Where(path => Path.GetFileName(path) != "manifest.json"))
                 File.Copy(file, Path.Combine(LoadWork, Path.GetFileName(file)));
             NativeSave.Validate(LoadWork);
+            if (Login._Instance == null || LoadMain._Instance == null) throw new InvalidOperationException("官方场景重载入口不可用");
+            CommandPanelState.Close();
+            PanelNoteEditing = false;
             Loading = true;
             LoadStarted = Time.realtimeSinceStartup;
             ObservedLoading = false;
             NativeLoadCompleted = false;
-            if (Login._Instance == null || LoadMain._Instance == null) throw new InvalidOperationException("官方场景重载入口不可用");
             PendingNativeLoad = true;
             Login._Instance.LoadSaveDataInGame(1, 1);
             Tip("正在读取检查点");
         }
         catch (Exception error) { Fail("读取失败，已停用本次运行的存读档", error, true); }
+    }
+
+    internal static void TogglePanel()
+    {
+        var reason = UnsafeReason(true);
+        var canShowPanel = CheckpointsActive && reason is null or "正在对话";
+        CommandPanelState.ToggleHome(true, false, canShowPanel);
+        if (!canShowPanel)
+        {
+            PanelNoteEditing = false;
+            Tip(!CheckpointsActive ? "存读档功能未启用"
+                : Loading ? "正在读取检查点，请稍候"
+                : Busy ? "正在保存检查点，请稍候"
+                : "请在游戏中打开面板");
+            return;
+        }
+        if (CommandPanelState.Open)
+        {
+            RefreshPanelSelectedCheckpoint();
+            RefreshPanelArchive();
+        }
     }
 
     internal static void Tick()
@@ -467,14 +490,7 @@ public sealed class RuntimeDriver : MonoBehaviour
             if (panel && !save && !load && Time.realtimeSinceStartup - Plugin.LastInput >= 0.35f)
             {
                 Plugin.LastInput = Time.realtimeSinceStartup;
-                var canShowPanel = Plugin.CheckpointsActive && Plugin.UnsafeReason(true) is null or "正在对话";
-                CommandPanelState.ToggleHome(true, false, canShowPanel);
-                if (!canShowPanel) Plugin.Tip("请在游戏中打开面板");
-                if (CommandPanelState.Open)
-                {
-                    Plugin.RefreshPanelSelectedCheckpoint();
-                    Plugin.RefreshPanelArchive();
-                }
+                Plugin.TogglePanel();
                 return;
             }
             if (!panel && ((save && !load) || (load && !save)) && Time.realtimeSinceStartup - Plugin.LastInput < 0.35f) return;
@@ -715,6 +731,7 @@ public sealed class RuntimeDriver : MonoBehaviour
     private static Texture2D CreateTexture(Color32 color)
     {
         var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+        texture.hideFlags = HideFlags.DontSave;
         texture.SetPixel(0, 0, color);
         texture.Apply();
         return texture;
@@ -727,6 +744,7 @@ public sealed class RuntimeDriver : MonoBehaviour
         try
         {
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            texture.hideFlags = HideFlags.DontSave;
             if (!texture.LoadImage(File.ReadAllBytes(summary.ScreenshotPath)))
             {
                 UnityEngine.Object.Destroy(texture);
@@ -745,7 +763,31 @@ public sealed class RuntimeDriver : MonoBehaviour
 
     private void EnsurePanelStyles()
     {
-        if (panelTitleStyle != null) return;
+        if (panelTitleStyle != null && PanelTexturesAlive()) return;
+        DestroyPanelTextures();
+        panelTitleStyle = null;
+        panelSubtitleStyle = null;
+        panelSectionStyle = null;
+        panelLabelStyle = null;
+        panelValueStyle = null;
+        panelButtonStyle = null;
+        panelButtonHover = null;
+        panelDisabledButtonStyle = null;
+        panelTabStyle = null;
+        panelTabActiveStyle = null;
+        panelArchiveRowStyle = null;
+        panelArchiveSelectedRowStyle = null;
+        panelArchiveLineStyle = null;
+        panelArchiveNoteStyle = null;
+        panelNoteHighlightStyle = null;
+        panelBadgeStyle = null;
+        panelTextFieldStyle = null;
+        panelSmallButtonStyle = null;
+        panelToggleStyle = null;
+        panelSurfaceStyle = null;
+        panelCardStyle = null;
+        panelLineStyle = null;
+        panelDotStyle = null;
         panelSurface = CreateTexture(new Color32(10, 15, 24, 236));
         panelCard = CreateTexture(new Color32(26, 36, 51, 72));
         panelLine = CreateTexture(new Color32(93, 182, 197, 120));
@@ -785,6 +827,35 @@ public sealed class RuntimeDriver : MonoBehaviour
         panelCardStyle = new GUIStyle { normal = { background = panelCard } };
         panelLineStyle = new GUIStyle { normal = { background = panelLine } };
         panelDotStyle = new GUIStyle { normal = { background = Texture2D.whiteTexture } };
+    }
+
+    private bool PanelTexturesAlive() =>
+        panelSurface != null && panelCard != null && panelLine != null && panelButton != null &&
+        panelButtonHoverTexture != null && panelTabTexture != null && panelTabActiveTexture != null &&
+        panelArchiveRowTexture != null && panelArchiveSelectedTexture != null && panelNoteHighlightTexture != null;
+
+    private void DestroyPanelTextures()
+    {
+        if (panelSurface != null) UnityEngine.Object.Destroy(panelSurface);
+        if (panelCard != null) UnityEngine.Object.Destroy(panelCard);
+        if (panelLine != null) UnityEngine.Object.Destroy(panelLine);
+        if (panelButton != null) UnityEngine.Object.Destroy(panelButton);
+        if (panelButtonHoverTexture != null) UnityEngine.Object.Destroy(panelButtonHoverTexture);
+        if (panelTabTexture != null) UnityEngine.Object.Destroy(panelTabTexture);
+        if (panelTabActiveTexture != null) UnityEngine.Object.Destroy(panelTabActiveTexture);
+        if (panelArchiveRowTexture != null) UnityEngine.Object.Destroy(panelArchiveRowTexture);
+        if (panelArchiveSelectedTexture != null) UnityEngine.Object.Destroy(panelArchiveSelectedTexture);
+        if (panelNoteHighlightTexture != null) UnityEngine.Object.Destroy(panelNoteHighlightTexture);
+        panelSurface = null;
+        panelCard = null;
+        panelLine = null;
+        panelButton = null;
+        panelButtonHoverTexture = null;
+        panelTabTexture = null;
+        panelTabActiveTexture = null;
+        panelArchiveRowTexture = null;
+        panelArchiveSelectedTexture = null;
+        panelNoteHighlightTexture = null;
     }
 
     private void DrawFutureWindow()
