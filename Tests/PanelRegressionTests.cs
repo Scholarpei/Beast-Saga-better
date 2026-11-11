@@ -37,45 +37,51 @@ internal static class PanelRegressionTests
             Test($"archive baseline row reserves three scaled lines at {width}x{height}", () =>
             {
                 var metrics = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height));
-                Require(metrics.ArchiveRowHeight >= 96 * metrics.Scale,
-                    $"row={metrics.ArchiveRowHeight}, required={96 * metrics.Scale}");
+                Require(metrics.ArchiveRowHeight >= 96 * metrics.ContentScale,
+                    $"row={metrics.ArchiveRowHeight}, required={96 * metrics.ContentScale}");
             });
             Test($"status columns and measured rows remain distinct at {width}x{height}", () =>
             {
                 var scale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).Scale;
+                var contentScale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).ContentScale;
                 var body = PanelBodyLayout.Create(width, height, scale);
                 Inside(body.View, new(0, 0, width, height));
                 Inside(body.Footer, new(0, 0, width, height));
                 Require(body.View.Y >= 140 * scale + 16 * scale, "body overlaps shared header/tabs");
                 Require(body.View.Bottom < body.Footer.Y, "body overlaps footer");
-                var shortText = StatusPanelGeometry.Create(body.View.Width - 20 * scale, scale, new[] { 30 * scale, 30 * scale, 30 * scale, 30 * scale });
-                var longText = StatusPanelGeometry.Create(body.View.Width - 20 * scale, scale, new[] { 30 * scale, 60 * scale, 180 * scale, 90 * scale });
+                Require(body.Footer.Height <= 18 * contentScale + .01f, "footer hint row is too tall");
+                Require(width - body.View.Right >= 19 * scale, "body no longer respects the screen edge");
+                var shortText = StatusPanelGeometry.Create(body.View.Width - 20 * contentScale, contentScale,
+                    new[] { 30 * contentScale, 30 * contentScale, 30 * contentScale, 30 * contentScale });
+                var longText = StatusPanelGeometry.Create(body.View.Width - 20 * contentScale, contentScale,
+                    new[] { 30 * contentScale, 60 * contentScale, 480 * contentScale, 180 * contentScale });
                 for (var index = 0; index < longText.Values.Count; index++)
                 {
                     Inside(longText.Labels[index], longText.Card);
                     Inside(longText.Values[index], longText.Card);
-                    Require(longText.Labels[index].Width >= 4 * 18 * scale + 16 * scale, "four-character label cannot stay on one line");
+                    Require(longText.Labels[index].Width >= 4 * 18 * contentScale + 16 * contentScale, "four-character label cannot stay on one line");
                     Require(longText.Labels[index].Right < longText.Values[index].X, "label overlaps value");
                     if (index > 0) Require(longText.Values[index - 1].Bottom < longText.Values[index].Y, "measured rows overlap");
                 }
-                Require(longText.Save.Y - shortText.Save.Y >= 239 * scale, "long text did not push buttons down");
+                Require(longText.Save.Y - shortText.Save.Y >= 239 * contentScale, "long text did not push buttons down");
                 Require(longText.Card.Bottom < longText.Save.Y && longText.Save.Bottom < longText.Load.Y && longText.Load.Bottom < longText.Toggle.Y);
                 Require(longText.Height > body.View.Height, "long text must scroll within body, above footer");
             });
             Test($"archive measured row rectangles fit and do not overlap at {width}x{height}", () =>
             {
                 var scale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).Scale;
+                var contentScale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).ContentScale;
                 var body = PanelBodyLayout.Create(width, height, scale);
-                var columns = ArchiveColumns.Create(body.View.Width - 20 * scale, body.View.Height, scale);
-                var page = new PanelRect(0, 0, body.View.Width - 20 * scale, columns.Height);
+                var columns = ArchiveColumns.Create(body.View.Width - 20 * contentScale, body.View.Height, contentScale);
+                var page = new PanelRect(0, 0, body.View.Width - 20 * contentScale, columns.Height);
                 Inside(columns.List, page);
                 Inside(columns.Detail, page);
                 Require(columns.List.Right < columns.Detail.X, "list/detail columns overlap");
                 foreach (var extra in new[] { 0, 40, 120 })
                 {
-                    var row = ArchiveRowGeometry.Create(columns.List.Width - 20 * scale, scale,
-                        27 * scale, 24 * scale, (30 + extra) * scale, (28 + extra) * scale);
-                    var rowBounds = new PanelRect(0, 0, columns.List.Width - 20 * scale, row.Height);
+                    var row = ArchiveRowGeometry.Create(columns.List.Width - 20 * contentScale, contentScale,
+                        27 * contentScale, 24 * contentScale, (30 + extra) * contentScale, (28 + extra) * contentScale);
+                    var rowBounds = new PanelRect(0, 0, columns.List.Width - 20 * contentScale, row.Height);
                     Inside(row.Time, rowBounds); Inside(row.Badge, rowBounds); Inside(row.Detail, rowBounds); Inside(row.Note, rowBounds);
                     Require(row.Time.Right < row.Badge.X, "time overlaps badge");
                     Require(Math.Max(row.Time.Bottom, row.Badge.Bottom) < row.Detail.Y, "top line overlaps detail");
@@ -85,10 +91,16 @@ internal static class PanelRegressionTests
             Test($"archive detail long fields push notes and buttons into scroll content at {width}x{height}", () =>
             {
                 var scale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).Scale;
-                var columns = ArchiveColumns.Create(width - 60 * scale, height - 206 * scale, scale);
-                var ordinary = PanelVerticalStack.Create(columns.Detail.Width - 20 * scale, scale, new[] { 200 * scale, 26 * scale, 30 * scale, 30 * scale, 30 * scale, 24 * scale, 26 * scale, 46 * scale, 36 * scale });
-                var longText = PanelVerticalStack.Create(columns.Detail.Width - 20 * scale, scale, new[] { 200 * scale, 26 * scale, 120 * scale, 30 * scale, 90 * scale, 24 * scale, 26 * scale, 300 * scale, 36 * scale });
-                var content = new PanelRect(0, 0, columns.Detail.Width - 20 * scale, longText.Height);
+                var contentScale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).ContentScale;
+                var body = PanelBodyLayout.Create(width, height, scale);
+                var columns = ArchiveColumns.Create(body.View.Width - 20 * contentScale, body.View.Height, contentScale);
+                var ordinary = PanelVerticalStack.Create(columns.Detail.Width - 20 * contentScale, contentScale,
+                    new[] { 200 * contentScale, 26 * contentScale, 30 * contentScale, 30 * contentScale, 30 * contentScale,
+                        24 * contentScale, 26 * contentScale, 46 * contentScale, 36 * contentScale });
+                var longText = PanelVerticalStack.Create(columns.Detail.Width - 20 * contentScale, contentScale,
+                    new[] { 200 * contentScale, 26 * contentScale, 120 * contentScale, 30 * contentScale, 90 * contentScale,
+                        24 * contentScale, 26 * contentScale, 600 * contentScale, 36 * contentScale });
+                var content = new PanelRect(0, 0, columns.Detail.Width - 20 * contentScale, longText.Height);
                 for (var index = 0; index < longText.Blocks.Count; index++)
                 {
                     Inside(longText.Blocks[index], content);
@@ -102,16 +114,19 @@ internal static class PanelRegressionTests
             Test($"small viewport uses finite bounded views and scroll content at {width}x{height}", () =>
             {
                 var scale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).Scale;
+                var contentScale = CommandPanelMetrics.Create(CommandPanelLayout.Create(width, height)).ContentScale;
                 var body = PanelBodyLayout.Create(width, height, scale);
                 Inside(body.View, new(0, 0, width, height));
                 Require(body.View.Bottom < body.Footer.Y);
-                var columns = ArchiveColumns.Create(body.View.Width - 20 * scale, body.View.Height, scale);
-                Inside(columns.List, new(0, 0, body.View.Width - 20 * scale, columns.Height));
-                Inside(columns.Detail, new(0, 0, body.View.Width - 20 * scale, columns.Height));
+                var columns = ArchiveColumns.Create(body.View.Width - 20 * contentScale, body.View.Height, contentScale);
+                Inside(columns.List, new(0, 0, body.View.Width - 20 * contentScale, columns.Height));
+                Inside(columns.Detail, new(0, 0, body.View.Width - 20 * contentScale, columns.Height));
                 if (width == 320) Require(columns.Detail.Y > columns.List.Bottom && columns.Height > body.View.Height, "narrow columns must stack and scroll");
-                var detail = PanelVerticalStack.Create(columns.Detail.Width - 20 * scale, scale, new[] { 200 * scale, 90 * scale, 140 * scale, 300 * scale, 36 * scale });
+                var detail = PanelVerticalStack.Create(columns.Detail.Width - 20 * contentScale, contentScale,
+                    new[] { 200 * contentScale, 90 * contentScale, 140 * contentScale, 300 * contentScale, 36 * contentScale });
                 Require(detail.Height > columns.Detail.Height);
-                var status = StatusPanelGeometry.Create(body.View.Width - 20 * scale, scale, new[] { 30 * scale, 90 * scale, 180 * scale, 140 * scale });
+                var status = StatusPanelGeometry.Create(body.View.Width - 20 * contentScale, contentScale,
+                    new[] { 30 * contentScale, 90 * contentScale, 180 * contentScale, 140 * contentScale });
                 Require(status.Height > body.View.Height);
             });
         Test("scrollbar clamps short-track thumb and out-of-range scroll within track", () =>

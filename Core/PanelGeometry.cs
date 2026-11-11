@@ -20,9 +20,19 @@ public static class PanelTextureGeometry
 
 public readonly record struct PanelBodyLayout(PanelRect View, PanelRect Footer)
 {
-    public static PanelBodyLayout Create(float width, float height, float scale) => new(
-        new(20 * scale, 156 * scale, Math.Max(1, width - 40 * scale), Math.Max(1, height - 206 * scale)),
-        new(20 * scale, height - 34 * scale, Math.Max(1, width - 40 * scale), 22 * scale));
+    public static PanelBodyLayout Create(float width, float height, float scale)
+    {
+        var contentScale = Math.Min(scale, 1.5f);
+        var footerHeight = 18 * contentScale;
+        var footerBottomMargin = 6 * contentScale;
+        var footerGap = 4 * contentScale;
+        var footerY = height - footerBottomMargin - footerHeight;
+        var bodyTop = 156 * scale;
+        var bodyBottom = footerY - footerGap;
+        return new(
+            new(20 * scale, bodyTop, Math.Max(1, width - 40 * scale), Math.Max(1, bodyBottom - bodyTop)),
+            new(20 * scale, footerY, Math.Max(1, width - 40 * scale), footerHeight));
+    }
 }
 
 public sealed record StatusPanelGeometry(PanelRect Card, IReadOnlyList<PanelRect> Labels,
@@ -131,13 +141,13 @@ public sealed record PanelVerticalStack(IReadOnlyList<PanelRect> Blocks, float H
     public static PanelVerticalStack Create(float width, float scale, IReadOnlyList<float> heights)
     {
         var blocks = new List<PanelRect>();
-        var y = 16 * scale;
+        var y = 12 * scale;
         foreach (var height in heights)
         {
             blocks.Add(new(16 * scale, y, Math.Max(1, width - 32 * scale), Math.Max(1, height)));
-            y += Math.Max(1, height) + 8 * scale;
+            y += Math.Max(1, height) + 6 * scale;
         }
-        return new(blocks, y + 8 * scale);
+        return new(blocks, y + 6 * scale);
     }
 }
 

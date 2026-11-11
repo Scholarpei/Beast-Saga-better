@@ -213,6 +213,7 @@ public readonly record struct CommandPanelLayout(float X, float Y, float Width, 
 
 public readonly record struct CommandPanelMetrics(
     float Scale,
+    float ContentScale,
     float ArchiveListWidth,
     float DetailPreviewHeight,
     float ArchiveRowHeight,
@@ -222,14 +223,20 @@ public readonly record struct CommandPanelMetrics(
     public static CommandPanelMetrics Create(CommandPanelLayout layout)
     {
         var scale = Math.Clamp(layout.Height / 720f, 0.72f, 3f);
-        var listMaximum = Math.Max(0, Math.Min(760f, layout.Width * 0.38f));
-        var previewMaximum = Math.Max(0, Math.Min(900f, layout.Height * 0.64f));
+        // The full-screen chrome follows the display scale, while page content stops
+        // growing at 1080p-equivalent sizes so 1440p/4K keep a useful information density.
+        var contentScale = Math.Min(scale, 1.5f);
+        var listMaximum = Math.Max(0, Math.Min(420f * contentScale, layout.Width * 0.38f));
+        var listMinimum = Math.Min(280f * contentScale, listMaximum);
+        var previewMaximum = Math.Max(0, Math.Min(480f * contentScale, layout.Height * 0.64f));
+        var previewMinimum = Math.Min(260f * contentScale, previewMaximum);
         return new(
             scale,
-            Math.Clamp(layout.Width * 0.26f, Math.Min(280f, listMaximum), listMaximum),
-            Math.Clamp(layout.Height * 0.56f, Math.Min(260f, previewMaximum), previewMaximum),
-            96f * scale,
-            Math.Max(6f, 9f * scale),
-            Math.Clamp(46f * scale, 44f, 64f));
+            contentScale,
+            Math.Clamp(layout.Width * 0.26f, listMinimum, listMaximum),
+            Math.Clamp(layout.Height * 0.56f, previewMinimum, previewMaximum),
+            96f * contentScale,
+            Math.Max(6f, 9f * contentScale),
+            46f * contentScale);
     }
 }

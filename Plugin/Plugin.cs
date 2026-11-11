@@ -524,6 +524,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private Dictionary<FuturePreviewKind, GUIStyle>? futureStyles;
     private GUIStyle? panelTitleStyle;
     private GUIStyle? panelSubtitleStyle;
+    private GUIStyle? panelContentSubtitleStyle;
     private GUIStyle? panelWrappedSubtitleStyle;
     private GUIStyle? panelHeaderStatusStyle;
     private GUIStyle? panelHeaderButtonStyle;
@@ -535,6 +536,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private GUIStyle? panelArchiveListNoteStyle;
     private GUIStyle? panelButtonStyle;
     private GUIStyle? panelDisabledButtonStyle;
+    private GUIStyle? panelActionButtonStyle;
+    private GUIStyle? panelActionButtonHover;
+    private GUIStyle? panelActionButtonDisabled;
     private GUIStyle? panelToggleStyle;
     private GUIStyle? panelSurfaceStyle;
     private GUIStyle? panelCardStyle;
@@ -553,6 +557,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private GUIStyle? panelButtonHover;
     private GUIStyle? panelTabStyle;
     private GUIStyle? panelTabActiveStyle;
+    private GUIStyle? panelFilterStyle;
+    private GUIStyle? panelFilterActiveStyle;
     private GUIStyle? panelArchiveRowStyle;
     private GUIStyle? panelArchiveSelectedRowStyle;
     private GUIStyle? panelBadgeStyle;
@@ -560,6 +566,13 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private GUIStyle? panelSmallButtonStyle;
     private GUIStyle? panelArchiveLineStyle;
     private GUIStyle? panelArchiveNoteStyle;
+    private GUIStyle? panelDetailSectionStyle;
+    private GUIStyle? panelDetailValueStyle;
+    private GUIStyle? panelDetailSubtitleStyle;
+    private GUIStyle? panelDetailWrappedSubtitleStyle;
+    private GUIStyle? panelDetailNoteStyle;
+    private GUIStyle? panelDetailButtonStyle;
+    private GUIStyle? panelDetailTextFieldStyle;
     private GUIStyle? panelNoteHighlightStyle;
     private GUIStyle? panelSidebarStyle;
     private GUIStyle? panelSidebarActiveStyle;
@@ -837,41 +850,49 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private void DrawStatusTab(Rect bounds, CommandPanelState.State state, float scale)
     {
         var body = PanelBodyLayout.Create(bounds.width, bounds.height, scale);
-        var width = Math.Max(1, body.View.Width - 20 * scale);
+        var contentScale = Math.Min(scale, 1.5f);
+        var width = Math.Max(1, Math.Min(body.View.Width - 20 * contentScale, 1040 * contentScale));
+        var contentX = Math.Max(0, (body.View.Width - width) / 2);
         var labels = new[] { "运行模式", "对话前", "读取目标", "安全检查" };
         var values = new[] { state.Mode, state.DialogueCheckpointText, state.SelectedCheckpointText, state.BlockedText };
-        var probe = StatusPanelGeometry.Create(width, scale, new float[4]);
-        var heights = values.Select((text, index) => TextHeight(panelValueStyle!, text, probe.Values[index].Width, 30 * scale)).ToArray();
-        var geometry = StatusPanelGeometry.Create(width, scale, heights);
+        var probe = StatusPanelGeometry.Create(width, contentScale, new float[4]);
+        var heights = values.Select((text, index) => TextHeight(panelValueStyle!, text, probe.Values[index].Width, 28 * contentScale)).ToArray();
+        var geometry = StatusPanelGeometry.Create(width, contentScale, heights);
         statusScroll = GUI.BeginScrollView(UnityRect(body.View), statusScroll,
-            new Rect(0, 0, width, Math.Max(body.View.Height, geometry.Height)), false, true);
+            new Rect(0, 0, body.View.Width, Math.Max(body.View.Height, geometry.Height)), false, true);
+        GUI.BeginGroup(new Rect(contentX, 0, width, geometry.Height));
         try
         {
             GUI.Box(UnityRect(geometry.Card), GUIContent.none, panelCardStyle!);
-            GUI.Label(new Rect(16 * scale, 10 * scale, width - 32 * scale, 26 * scale), "状态", panelSectionStyle);
+            GUI.Label(new Rect(16 * contentScale, 8 * contentScale, width - 32 * contentScale, 24 * contentScale), "状态", panelSectionStyle);
             for (var index = 0; index < values.Length; index++)
             {
                 GUI.Label(UnityRect(geometry.Labels[index]), labels[index], panelStatusLabelStyle!);
                 GUI.Label(UnityRect(geometry.Values[index]), values[index], panelValueStyle!);
             }
-            GUI.Label(new Rect(0, geometry.Card.Bottom + 16 * scale, width, 26 * scale), "快速操作", panelSectionStyle);
-            if (DrawActionButton(UnityRect(geometry.Save), "快速保存（F5）", state.CanSave, panelButtonStyle!, panelButtonHover!, panelDisabledButtonStyle!))
+            GUI.Label(new Rect(0, geometry.Card.Bottom + 12 * contentScale, width, 24 * contentScale), "快速操作", panelSectionStyle);
+            if (DrawActionButton(UnityRect(geometry.Save), "快速保存（F5）", state.CanSave, panelActionButtonStyle!, panelActionButtonHover!, panelActionButtonDisabled!))
             {
                 CommandPanelState.RunSave(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
                 Plugin.RefreshPanelSelectedCheckpoint();
                 Plugin.RefreshPanelArchive();
             }
-            if (DrawActionButton(UnityRect(geometry.Load), "读取检查点（F6）", state.CanLoad, panelButtonStyle!, panelButtonHover!, panelDisabledButtonStyle!))
+            if (DrawActionButton(UnityRect(geometry.Load), "读取检查点（F6）", state.CanLoad, panelActionButtonStyle!, panelActionButtonHover!, panelActionButtonDisabled!))
                 CommandPanelState.RunLoad(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
-            GUI.Label(new Rect(0, geometry.Load.Bottom + 24 * scale, width, 26 * scale), "辅助", panelSectionStyle);
+            GUI.Label(new Rect(0, geometry.Load.Bottom + 18 * contentScale, width, 24 * contentScale), "辅助", panelSectionStyle);
             var toggle = UnityRect(geometry.Toggle);
             GUI.Box(toggle, GUIContent.none, panelCardStyle!);
-            var next = GUI.Toggle(new Rect(toggle.x + 16 * scale, toggle.y + 9 * scale, Math.Max(1, toggle.width - 32 * scale), 30 * scale),
+            var next = GUI.Toggle(new Rect(toggle.x + 16 * contentScale, toggle.y + 8 * contentScale, Math.Max(1, toggle.width - 32 * contentScale), 28 * contentScale),
                 state.IndicatorsEnabled, "悬停显示判定与未来预览", panelToggleStyle);
             if (next != state.IndicatorsEnabled) Plugin.EnableIndicators.Value = next;
         }
-        finally { GUI.EndScrollView(); }
-        GUI.Label(UnityRect(body.Footer), $"{Plugin.PanelCloseHint} · {Plugin.SaveKey.Value} 快存 · {Plugin.LoadKey.Value} 读取", panelSubtitleStyle);
+        finally
+        {
+            GUI.EndGroup();
+            GUI.EndScrollView();
+        }
+        DrawFooterHint(new Rect(contentX, body.Footer.Y, width, body.Footer.Height),
+            $"{Plugin.PanelCloseHint} · {Plugin.SaveKey.Value} 快存 · {Plugin.LoadKey.Value} 读取");
     }
 
     private void DrawArchiveTab(Rect bounds, CommandPanelState.State state)
@@ -887,44 +908,45 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var archive = archiveView!;
         var metrics = CommandPanelMetrics.Create(CommandPanelLayout.Create(Screen.width, Screen.height));
         var scale = metrics.Scale;
+        var contentScale = metrics.ContentScale;
         var body = PanelBodyLayout.Create(bounds.width, bounds.height, scale);
-        var pageWidth = Math.Max(1, body.View.Width - 20 * scale);
-        var columns = ArchiveColumns.Create(pageWidth, body.View.Height, scale);
+        var pageWidth = Math.Max(1, body.View.Width - 20 * contentScale);
+        var columns = ArchiveColumns.Create(pageWidth, body.View.Height, contentScale);
         archiveBodyScroll = GUI.BeginScrollView(UnityRect(body.View), archiveBodyScroll,
             new Rect(0, 0, pageWidth, columns.Height), false, columns.Height > body.View.Height);
         try
         {
             var listWidth = columns.List.Width;
-            GUI.Label(new Rect(0, 0, listWidth, 26 * scale), state.ArchiveCountText, panelSubtitleStyle!);
-            var filterY = 30 * scale;
+            GUI.Label(new Rect(0, 0, listWidth, 24 * contentScale), state.ArchiveCountText, panelContentSubtitleStyle!);
+            var filterY = 28 * contentScale;
             var filterX = 0f;
             foreach (var (filter, label, width) in new[]
             {
-                (CheckpointArchiveFilter.All, "全部", 46f * scale),
-                (CheckpointArchiveFilter.Manual, "手动", 46f * scale),
-                (CheckpointArchiveFilter.PreDialogue, "对话前", 62f * scale)
+                (CheckpointArchiveFilter.All, "全部", 46f * contentScale),
+                (CheckpointArchiveFilter.Manual, "手动", 46f * contentScale),
+                (CheckpointArchiveFilter.PreDialogue, "对话前", 62f * contentScale)
             })
             {
-                if (GUI.Button(new Rect(filterX, filterY, width, 34 * scale), label,
-                    PanelArchiveData.Filter == filter ? panelTabActiveStyle! : panelTabStyle!))
+                if (GUI.Button(new Rect(filterX, filterY, width, 32 * contentScale), label,
+                    PanelArchiveData.Filter == filter ? panelFilterActiveStyle! : panelFilterStyle!))
                 {
                     PanelArchiveData.Filter = filter;
                     archiveScroll = Vector2.zero;
                 }
-                filterX += width + 6 * scale;
+                filterX += width + 6 * contentScale;
             }
-            var sortWidth = Math.Min(listWidth, 126 * scale);
-            var sortY = columns.SeparateSortRow ? filterY + 40 * scale : filterY;
-            if (GUI.Button(new Rect(listWidth - sortWidth, sortY, sortWidth, 34 * scale),
+            var sortWidth = Math.Min(listWidth, 126 * contentScale);
+            var sortY = columns.SeparateSortRow ? filterY + 38 * contentScale : filterY;
+            if (GUI.Button(new Rect(listWidth - sortWidth, sortY, sortWidth, 32 * contentScale),
                 PanelArchiveData.SortMode == CheckpointArchiveSortMode.CapturedTime ? "按存档时间" : "按游戏时间", panelSmallButtonStyle!))
                 PanelArchiveData.SortMode = PanelArchiveData.SortMode == CheckpointArchiveSortMode.CapturedTime
                     ? CheckpointArchiveSortMode.GameTime : CheckpointArchiveSortMode.CapturedTime;
-            var rowWidth = Math.Max(1, listWidth - 20 * scale);
-            var rowGeometry = ArchiveRowGeometry.Create(rowWidth, scale,
-                Math.Max(24 * scale, panelArchiveLineStyle!.lineHeight + 4 * scale),
-                Math.Max(24 * scale, panelBadgeStyle!.lineHeight + 4 * scale),
-                Math.Max(24 * scale, panelArchiveListDetailStyle!.lineHeight + 4 * scale),
-                Math.Max(24 * scale, panelArchiveListNoteStyle!.lineHeight + 4 * scale));
+            var rowWidth = Math.Max(1, listWidth - 20 * contentScale);
+            var rowGeometry = ArchiveRowGeometry.Create(rowWidth, contentScale,
+                Math.Max(22 * contentScale, panelArchiveLineStyle!.lineHeight + 4 * contentScale),
+                Math.Max(18 * contentScale, panelBadgeStyle!.lineHeight + 4 * contentScale),
+                Math.Max(20 * contentScale, panelArchiveListDetailStyle!.lineHeight + 4 * contentScale),
+                Math.Max(22 * contentScale, panelArchiveListNoteStyle!.lineHeight + 4 * contentScale));
             var rowHeight = Math.Max(metrics.ArchiveRowHeight, rowGeometry.Height);
             var stride = rowHeight + metrics.ArchiveRowSpacing;
             archiveScroll = GUI.BeginScrollView(UnityRect(columns.List), archiveScroll,
@@ -950,86 +972,89 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                     GUI.Box(At(rowGeometry.Note), GUIContent.none,
                         string.IsNullOrWhiteSpace(item.Note) ? panelCardStyle! : panelNoteHighlightStyle!);
                     var note = At(rowGeometry.Note);
-                    GUI.Label(new Rect(note.x + 6 * scale, note.y, Math.Max(1, note.width - 12 * scale), note.height),
+                    GUI.Label(new Rect(note.x + 6 * contentScale, note.y, Math.Max(1, note.width - 12 * contentScale), note.height),
                         item.NoteText(), panelArchiveListNoteStyle!);
                 }
             }
             finally { GUI.EndScrollView(); }
-            DrawArchiveDetail(UnityRect(columns.Detail), state.ArchiveSelection, scale);
+            DrawArchiveDetail(UnityRect(columns.Detail), state.ArchiveSelection, contentScale);
         }
         finally { GUI.EndScrollView(); }
-        GUI.Label(UnityRect(body.Footer), $"{Plugin.PanelCloseHint} · {Plugin.LoadKey.Value} 读取当前目标", panelSubtitleStyle);
+        DrawFooterHint(UnityRect(body.Footer), $"{Plugin.PanelCloseHint} · {Plugin.LoadKey.Value} 读取当前目标");
     }
 
     private void DrawArchiveDetail(Rect detail, CheckpointSummary? selection, float scale)
     {
         GUI.Box(detail, GUIContent.none, panelCardStyle!);
-        var scrollWidth = Math.Max(1, detail.width - 20 * scale);
-        var textWidth = Math.Max(1, scrollWidth - 32 * scale);
+        var detailScale = Math.Min(scale, 1.25f);
+        var scrollWidth = Math.Max(1, detail.width - 20 * detailScale);
+        var textWidth = Math.Max(1, scrollWidth - 32 * detailScale);
         if (selection is null)
         {
-            var empty = PanelVerticalStack.Create(scrollWidth, scale, new[]
+            var empty = PanelVerticalStack.Create(scrollWidth, detailScale, new[]
             {
-                TextHeight(panelValueStyle!, "选择一份存档", textWidth, 30 * scale),
-                TextHeight(panelWrappedSubtitleStyle!, "列表包含手动 F5 与对话前自动检查点；旧版检查点不显示。", textWidth, 30 * scale)
+                TextHeight(panelDetailValueStyle!, "选择一份存档", textWidth, 30 * detailScale),
+                TextHeight(panelDetailWrappedSubtitleStyle!, "列表包含手动 F5 与对话前自动检查点；旧版检查点不显示。", textWidth, 30 * detailScale)
             });
-            archiveDetailScroll = GUI.BeginScrollView(detail, archiveDetailScroll, new Rect(0, 0, scrollWidth, Math.Max(detail.height, empty.Height)), false, true);
+            archiveDetailScroll = GUI.BeginScrollView(detail, archiveDetailScroll, new Rect(0, 0, scrollWidth, Math.Max(detail.height, empty.Height)), false, false);
             try
             {
-                GUI.Label(UnityRect(empty.Blocks[0]), "选择一份存档", panelValueStyle!);
-                GUI.Label(UnityRect(empty.Blocks[1]), "列表包含手动 F5 与对话前自动检查点；旧版检查点不显示。", panelWrappedSubtitleStyle!);
+                GUI.Label(UnityRect(empty.Blocks[0]), "选择一份存档", panelDetailValueStyle!);
+                GUI.Label(UnityRect(empty.Blocks[1]), "列表包含手动 F5 与对话前自动检查点；旧版检查点不显示。", panelDetailWrappedSubtitleStyle!);
             }
             finally { GUI.EndScrollView(); }
             return;
         }
-        var previewHeight = Math.Max(40 * scale, Math.Min(200 * scale, textWidth * 9 / 16));
+        var previewHeight = Math.Max(40 * scale, Math.Min(480 * scale, textWidth * 9 / 16));
         var conversation = selection.Conversation ?? "";
         var noteText = selection.NoteText();
-        var noteHeight = Plugin.PanelNoteEditing ? 40 * scale
-            : TextHeight(panelArchiveNoteStyle!, noteText, Math.Max(1, textWidth - 24 * scale), 34 * scale) + 12 * scale;
-        var stack = PanelVerticalStack.Create(scrollWidth, scale, new[]
+        var noteHeight = Plugin.PanelNoteEditing ? 40 * detailScale
+            : TextHeight(panelDetailNoteStyle!, noteText, Math.Max(1, textWidth - 24 * detailScale), 34 * detailScale) + 12 * detailScale;
+        var stack = PanelVerticalStack.Create(scrollWidth, detailScale, new[]
         {
             previewHeight,
-            TextHeight(panelSectionStyle!, selection.KindText(), textWidth, 26 * scale),
-            string.IsNullOrWhiteSpace(conversation) ? 1 : TextHeight(panelValueStyle!, conversation, textWidth, 30 * scale),
-            TextHeight(panelValueStyle!, selection.DisplayFullTime(), textWidth, 30 * scale),
-            TextHeight(panelValueStyle!, selection.DisplayDetailLine(), textWidth, 30 * scale),
-            TextHeight(panelWrappedSubtitleStyle!, selection.Selected ? "当前读取目标" : "未设为读取目标", textWidth, 24 * scale),
-            26 * scale, noteHeight, 36 * scale
+            TextHeight(panelDetailSectionStyle!, selection.KindText(), textWidth, 24 * detailScale),
+            string.IsNullOrWhiteSpace(conversation) ? 1 : TextHeight(panelDetailValueStyle!, conversation, textWidth, 28 * detailScale),
+            TextHeight(panelDetailValueStyle!, selection.DisplayFullTime(), textWidth, 28 * detailScale),
+            TextHeight(panelDetailValueStyle!, selection.DisplayDetailLine(), textWidth, 28 * detailScale),
+            TextHeight(panelDetailSubtitleStyle!, selection.Selected ? "当前读取目标" : "未设为读取目标", textWidth, 22 * detailScale),
+            24 * detailScale, noteHeight, 36 * detailScale
         });
         archiveDetailScroll = GUI.BeginScrollView(detail, archiveDetailScroll,
-            new Rect(0, 0, scrollWidth, Math.Max(detail.height, stack.Height)), false, true);
+            new Rect(0, 0, scrollWidth, Math.Max(detail.height, stack.Height)), false, false);
         try
         {
             var parts = stack.Blocks;
             var preview = LoadThumbnail(selection);
             if (preview != null) GUI.DrawTexture(UnityRect(parts[0]), preview, ScaleMode.ScaleToFit, false);
-            else GUI.Label(UnityRect(parts[0]), selection.Kind == CheckpointKind.PreDialogue ? "对话前自动检查点\n无缩略截图" : "截图不可用", panelWrappedSubtitleStyle!);
-            GUI.Label(UnityRect(parts[1]), selection.KindText(), panelSectionStyle!);
-            if (!string.IsNullOrWhiteSpace(conversation)) GUI.Label(UnityRect(parts[2]), conversation, panelValueStyle!);
-            GUI.Label(UnityRect(parts[3]), selection.DisplayFullTime(), panelValueStyle!);
-            GUI.Label(UnityRect(parts[4]), selection.DisplayDetailLine(), panelValueStyle!);
-            GUI.Label(UnityRect(parts[5]), selection.Selected ? "当前读取目标" : "未设为读取目标", panelWrappedSubtitleStyle!);
-            GUI.Label(UnityRect(parts[6]), "备注", panelSectionStyle!);
+            else GUI.Label(UnityRect(parts[0]), selection.Kind == CheckpointKind.PreDialogue ? "对话前自动检查点\n无缩略截图" : "截图不可用", panelDetailWrappedSubtitleStyle!);
+            GUI.Label(UnityRect(parts[1]), selection.KindText(), panelDetailSectionStyle!);
+            if (!string.IsNullOrWhiteSpace(conversation)) GUI.Label(UnityRect(parts[2]), conversation, panelDetailValueStyle!);
+            GUI.Label(UnityRect(parts[3]), selection.DisplayFullTime(), panelDetailValueStyle!);
+            GUI.Label(UnityRect(parts[4]), selection.DisplayDetailLine(), panelDetailValueStyle!);
+            GUI.Label(UnityRect(parts[5]), selection.Selected ? "当前读取目标" : "未设为读取目标", panelDetailSubtitleStyle!);
+            GUI.Label(UnityRect(parts[6]), "备注", panelDetailSectionStyle!);
             var note = UnityRect(parts[7]);
             var buttons = UnityRect(parts[8]);
             if (!Plugin.PanelNoteEditing)
             {
                 GUI.Box(note, GUIContent.none, panelNoteHighlightStyle!);
-                GUI.Label(new Rect(note.x + 12 * scale, note.y + 6 * scale, Math.Max(1, note.width - 24 * scale), note.height - 12 * scale), noteText, panelArchiveNoteStyle!);
+                GUI.Label(new Rect(note.x + 12 * detailScale, note.y + 6 * detailScale,
+                    Math.Max(1, note.width - 24 * detailScale), note.height - 12 * detailScale),
+                    noteText, panelDetailNoteStyle!);
                 if (GUI.Button(note, GUIContent.none, GUIStyle.none))
                 {
                     Plugin.PanelNoteDraft = selection.Note ?? "";
                     Plugin.PanelNoteEditing = true;
                 }
-                if (GUI.Button(buttons, "设为读取目标", panelSmallButtonStyle!)) Plugin.SelectArchive(selection.Generation);
+                if (GUI.Button(buttons, "设为读取目标", panelDetailButtonStyle!)) Plugin.SelectArchive(selection.Generation);
             }
             else
             {
-                Plugin.PanelNoteDraft = GUI.TextField(note, Plugin.PanelNoteDraft, panelTextFieldStyle!);
-                var gap = 8 * scale;
+                Plugin.PanelNoteDraft = GUI.TextField(note, Plugin.PanelNoteDraft, panelDetailTextFieldStyle!);
+                var gap = 8 * detailScale;
                 var halfWidth = Math.Max(1, (buttons.width - gap) / 2);
-                var save = GUI.Button(new Rect(buttons.x, buttons.y, halfWidth, buttons.height), "保存", panelSmallButtonStyle!) ||
+                var save = GUI.Button(new Rect(buttons.x, buttons.y, halfWidth, buttons.height), "保存", panelDetailButtonStyle!) ||
                     Event.current.type == EventType.KeyDown && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter);
                 if (save)
                 {
@@ -1037,7 +1062,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                     Plugin.PanelNoteEditing = false;
                     if (Event.current.type == EventType.KeyDown) Event.current.Use();
                 }
-                if (GUI.Button(new Rect(buttons.x + halfWidth + gap, buttons.y, halfWidth, buttons.height), "取消", panelSmallButtonStyle!))
+                if (GUI.Button(new Rect(buttons.x + halfWidth + gap, buttons.y, halfWidth, buttons.height), "取消", panelDetailButtonStyle!))
                 {
                     Plugin.PanelNoteDraft = selection.Note ?? "";
                     Plugin.PanelNoteEditing = false;
@@ -1056,6 +1081,14 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             return GUI.Button(bounds, text, style) && previous && enabled;
         }
         finally { GUI.enabled = previous; }
+    }
+
+    private void DrawFooterHint(Rect area, string text)
+    {
+        var size = panelContentSubtitleStyle!.CalcSize(new GUIContent(text));
+        var height = Math.Min(area.height, size.y + 2);
+        GUI.Label(new Rect(area.x, area.y + (area.height - height) / 2,
+            Math.Min(area.width, size.x + 2), height), text, panelContentSubtitleStyle);
     }
 
     private void DrawStatusDot(Rect bounds, CommandPanelState.State state)
@@ -1110,6 +1143,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         DestroyPanelTextures();
         panelTitleStyle = null;
         panelSubtitleStyle = null;
+        panelContentSubtitleStyle = null;
         panelWrappedSubtitleStyle = null;
         panelHeaderStatusStyle = null;
         panelHeaderButtonStyle = null;
@@ -1119,12 +1153,24 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         panelButtonStyle = null;
         panelButtonHover = null;
         panelDisabledButtonStyle = null;
+        panelActionButtonStyle = null;
+        panelActionButtonHover = null;
+        panelActionButtonDisabled = null;
         panelTabStyle = null;
         panelTabActiveStyle = null;
+        panelFilterStyle = null;
+        panelFilterActiveStyle = null;
         panelArchiveRowStyle = null;
         panelArchiveSelectedRowStyle = null;
         panelArchiveLineStyle = null;
         panelArchiveNoteStyle = null;
+        panelDetailSectionStyle = null;
+        panelDetailValueStyle = null;
+        panelDetailSubtitleStyle = null;
+        panelDetailWrappedSubtitleStyle = null;
+        panelDetailNoteStyle = null;
+        panelDetailButtonStyle = null;
+        panelDetailTextFieldStyle = null;
         panelNoteHighlightStyle = null;
         panelBadgeStyle = null;
         panelTextFieldStyle = null;
@@ -1147,37 +1193,89 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         panelArchiveRowTexture = CreateTexture(new Color32(20, 29, 42, 180));
         panelArchiveSelectedTexture = CreateTexture(new Color32(38, 68, 81, 230));
         panelNoteHighlightTexture = CreateTexture(new Color32(64, 51, 16, 230));
+        var contentScale = Math.Min(scale, 1.5f);
         panelTitleStyle = new GUIStyle { normal = { textColor = new Color32(235, 243, 255, 255) }, fontSize = Math.Max(20, (int)(25 * scale)), fontStyle = FontStyle.Bold };
         panelSubtitleStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = Math.Max(13, (int)(15 * scale)) };
-        panelWrappedSubtitleStyle = new GUIStyle(panelSubtitleStyle) { wordWrap = true };
+        panelContentSubtitleStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = Math.Max(12, (int)(13 * contentScale)) };
+        panelWrappedSubtitleStyle = new GUIStyle(panelContentSubtitleStyle) { wordWrap = true };
         panelHeaderStatusStyle = new GUIStyle(panelSubtitleStyle) { alignment = TextAnchor.MiddleRight };
-        panelSectionStyle = new GUIStyle { normal = { textColor = new Color32(134, 217, 229, 255) }, fontSize = Math.Max(14, (int)(16 * scale)), fontStyle = FontStyle.Bold };
-        panelLabelStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = Math.Max(13, (int)(15 * scale)) };
-        panelValueStyle = new GUIStyle { normal = { textColor = new Color32(212, 226, 241, 255) }, fontSize = Math.Max(15, (int)(18 * scale)), wordWrap = true };
+        panelSectionStyle = new GUIStyle { normal = { textColor = new Color32(134, 217, 229, 255) }, fontSize = Math.Max(12, (int)(16 * contentScale)), fontStyle = FontStyle.Bold };
+        panelLabelStyle = new GUIStyle { normal = { textColor = new Color32(145, 164, 190, 255) }, fontSize = Math.Max(12, (int)(14 * contentScale)) };
+        panelValueStyle = new GUIStyle { normal = { textColor = new Color32(212, 226, 241, 255) }, fontSize = Math.Max(13, (int)(17 * contentScale)), wordWrap = true };
         panelStatusLabelStyle = new GUIStyle(panelValueStyle) { wordWrap = false, clipping = TextClipping.Clip };
         panelButtonStyle = new GUIStyle(panelLabelStyle) { normal = { background = panelButton, textColor = new Color32(229, 241, 255, 255) }, alignment = TextAnchor.MiddleCenter, fontSize = Math.Max(15, (int)(18 * scale)) };
         panelButtonHover = new GUIStyle(panelButtonStyle) { normal = { background = panelButtonHoverTexture } };
         panelDisabledButtonStyle = new GUIStyle(panelButtonStyle) { normal = { background = panelButton, textColor = new Color32(110, 122, 138, 255) } };
+        panelActionButtonStyle = new GUIStyle(panelButtonStyle) { fontSize = Math.Max(13, (int)(16 * contentScale)) };
+        panelActionButtonHover = new GUIStyle(panelActionButtonStyle) { normal = { background = panelButtonHoverTexture } };
+        panelActionButtonDisabled = new GUIStyle(panelActionButtonStyle) { normal = { background = panelButton, textColor = new Color32(110, 122, 138, 255) } };
         panelTabStyle = new GUIStyle(panelButtonStyle) { normal = { background = panelTabTexture, textColor = new Color32(181, 195, 212, 255) } };
         panelTabActiveStyle = new GUIStyle(panelButtonStyle) { normal = { background = panelTabActiveTexture, textColor = new Color32(154, 235, 244, 255) } };
+        panelFilterStyle = new GUIStyle(panelActionButtonStyle)
+        {
+            fontSize = Math.Max(12, (int)(14 * contentScale)),
+            normal = { background = panelTabTexture, textColor = new Color32(181, 195, 212, 255) }
+        };
+        panelFilterActiveStyle = new GUIStyle(panelFilterStyle)
+        {
+            normal = { background = panelTabActiveTexture, textColor = new Color32(154, 235, 244, 255) }
+        };
         panelArchiveRowStyle = new GUIStyle { normal = { background = panelArchiveRowTexture } };
         panelArchiveSelectedRowStyle = new GUIStyle { normal = { background = panelArchiveSelectedTexture } };
-        panelArchiveLineStyle = new GUIStyle(panelValueStyle) { fontSize = Math.Max(16, (int)(19 * scale)), wordWrap = false };
+        panelArchiveLineStyle = new GUIStyle(panelValueStyle) { fontSize = Math.Max(14, (int)(16 * contentScale)), wordWrap = false };
         panelArchiveLineStyle.clipping = TextClipping.Clip;
         panelArchiveNoteStyle = new GUIStyle(panelValueStyle)
         {
-            fontSize = Math.Max(16, (int)(18 * scale)),
+            fontSize = Math.Max(14, (int)(16 * contentScale)),
             normal = { textColor = new Color32(255, 226, 125, 255) },
             wordWrap = true
         };
+        var detailScale = Math.Min(contentScale, 1.25f);
+        panelDetailSectionStyle = new GUIStyle
+        {
+            normal = { textColor = new Color32(134, 217, 229, 255) },
+            fontSize = Math.Max(12, (int)(16 * detailScale)),
+            fontStyle = FontStyle.Bold
+        };
+        panelDetailValueStyle = new GUIStyle
+        {
+            normal = { textColor = new Color32(212, 226, 241, 255) },
+            fontSize = Math.Max(13, (int)(17 * detailScale)),
+            wordWrap = true
+        };
+        panelDetailSubtitleStyle = new GUIStyle
+        {
+            normal = { textColor = new Color32(145, 164, 190, 255) },
+            fontSize = Math.Max(11, (int)(13 * detailScale))
+        };
+        panelDetailWrappedSubtitleStyle = new GUIStyle(panelDetailSubtitleStyle) { wordWrap = true };
+        panelDetailNoteStyle = new GUIStyle(panelDetailValueStyle)
+        {
+            fontSize = Math.Max(13, (int)(16 * detailScale)),
+            normal = { textColor = new Color32(255, 226, 125, 255) },
+            wordWrap = true
+        };
+        panelDetailButtonStyle = new GUIStyle(panelButtonStyle)
+        {
+            fontSize = Math.Max(12, (int)(15 * detailScale))
+        };
+        panelDetailTextFieldStyle = new GUIStyle(GUI.skin.textField)
+        {
+            fontSize = Math.Max(13, (int)(16 * detailScale))
+        };
         panelNoteHighlightStyle = new GUIStyle { normal = { background = panelNoteHighlightTexture } };
-        panelArchiveListDetailStyle = new GUIStyle(panelValueStyle) { wordWrap = false, clipping = TextClipping.Clip };
+        panelArchiveListDetailStyle = new GUIStyle(panelValueStyle)
+        {
+            fontSize = Math.Max(12, (int)(14 * contentScale)),
+            wordWrap = false,
+            clipping = TextClipping.Clip
+        };
         panelArchiveListNoteStyle = new GUIStyle(panelArchiveNoteStyle) { wordWrap = false, clipping = TextClipping.Clip };
-        panelBadgeStyle = new GUIStyle(panelSubtitleStyle) { fontSize = Math.Max(12, (int)(14 * scale)), alignment = TextAnchor.UpperRight };
-        panelTextFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = Math.Max(15, (int)(18 * scale)) };
-        panelSmallButtonStyle = new GUIStyle(panelButtonStyle) { fontSize = Math.Max(14, (int)(16 * scale)) };
+        panelBadgeStyle = new GUIStyle(panelContentSubtitleStyle) { fontSize = Math.Max(10, (int)(12 * contentScale)), alignment = TextAnchor.UpperRight };
+        panelTextFieldStyle = new GUIStyle(GUI.skin.textField) { fontSize = Math.Max(13, (int)(16 * contentScale)) };
+        panelSmallButtonStyle = new GUIStyle(panelButtonStyle) { fontSize = Math.Max(12, (int)(15 * contentScale)) };
         panelHeaderButtonStyle = new GUIStyle(panelButtonStyle) { fontSize = Math.Max(12, (int)(13 * scale)) };
-        panelToggleStyle = new GUIStyle(panelValueStyle) { fontSize = Math.Max(14, (int)(17 * scale)) };
+        panelToggleStyle = new GUIStyle(panelValueStyle) { fontSize = Math.Max(13, (int)(16 * contentScale)) };
         panelSidebarStyle = new GUIStyle(panelTabStyle)
         {
             alignment = TextAnchor.MiddleCenter,
@@ -1200,15 +1298,22 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     }
 
     private bool PanelStylesAlive() => panelTitleStyle is not null && panelSubtitleStyle is not null &&
-        panelWrappedSubtitleStyle is not null && panelHeaderStatusStyle is not null && panelHeaderButtonStyle is not null &&
+        panelContentSubtitleStyle is not null && panelWrappedSubtitleStyle is not null &&
+        panelHeaderStatusStyle is not null && panelHeaderButtonStyle is not null &&
         panelSectionStyle is not null && panelLabelStyle is not null && panelValueStyle is not null &&
         panelStatusLabelStyle is not null && panelArchiveListDetailStyle is not null && panelArchiveListNoteStyle is not null &&
         panelButtonStyle is not null && panelButtonHover is not null && panelDisabledButtonStyle is not null &&
+        panelActionButtonStyle is not null && panelActionButtonHover is not null && panelActionButtonDisabled is not null &&
         panelToggleStyle is not null && panelSurfaceStyle is not null && panelCardStyle is not null &&
         panelLineStyle is not null && panelDotStyle is not null && panelTabStyle is not null && panelTabActiveStyle is not null &&
+        panelFilterStyle is not null && panelFilterActiveStyle is not null &&
         panelArchiveRowStyle is not null && panelArchiveSelectedRowStyle is not null && panelBadgeStyle is not null &&
         panelTextFieldStyle is not null && panelSmallButtonStyle is not null && panelArchiveLineStyle is not null &&
-        panelArchiveNoteStyle is not null && panelNoteHighlightStyle is not null && panelSidebarStyle is not null &&
+        panelArchiveNoteStyle is not null && panelDetailSectionStyle is not null &&
+        panelDetailValueStyle is not null && panelDetailSubtitleStyle is not null &&
+        panelDetailWrappedSubtitleStyle is not null && panelDetailNoteStyle is not null &&
+        panelDetailButtonStyle is not null && panelDetailTextFieldStyle is not null &&
+        panelNoteHighlightStyle is not null && panelSidebarStyle is not null &&
         panelSidebarActiveStyle is not null && panelSidebarDisabledStyle is not null;
 
     private bool PanelTexturesAlive() =>

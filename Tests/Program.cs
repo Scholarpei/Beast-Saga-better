@@ -839,12 +839,18 @@ try
     {
         var hd = CommandPanelMetrics.Create(CommandPanelLayout.Create(1280, 720));
         Require(hd.Scale is >= 0.85f and <= 1.05f, "scale " + hd);
+        Require(hd.ContentScale is >= 0.85f and <= 1.05f, "content scale " + hd);
         Require(hd.ArchiveListWidth is >= 320f and <= 460f, "list " + hd);
         Require(hd.DetailPreviewHeight is >= 380f and <= 470f, "preview " + hd);
         Require(hd.ArchiveRowHeight >= 84f && hd.ArchiveRowSpacing >= 6f && hd.MajorButtonHeight >= 44f, "rows " + hd);
+        var qhd = CommandPanelMetrics.Create(CommandPanelLayout.Create(2560, 1440));
+        Require(qhd.Scale == 2f && qhd.ContentScale == 1.5f, "content scale must be capped at 1440p: " + qhd);
+        Require(qhd.ArchiveRowHeight == 144f && qhd.ArchiveRowHeight < 96f * qhd.Scale,
+            "archive rows should stay compact on 1440p: " + qhd);
+        Require(qhd.DetailPreviewHeight == 720f, "large preview should grow to 720px on 1440p: " + qhd);
         var fourK = CommandPanelMetrics.Create(CommandPanelLayout.Create(3840, 2160));
         Require(fourK.Scale > hd.Scale && fourK.ArchiveListWidth > hd.ArchiveListWidth &&
-                fourK.DetailPreviewHeight > hd.DetailPreviewHeight && fourK.ArchiveRowHeight > hd.ArchiveRowHeight);
+                fourK.DetailPreviewHeight > hd.DetailPreviewHeight && fourK.ContentScale == 1.5f);
     });
     Test("single-check parser rejects script suffixes", () =>
         Require(CheckPreview.Parse("IsPlayerPro('感知','大于等于',15); AwardExp(100)") is null));
