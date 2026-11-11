@@ -11,6 +11,8 @@ tools/*
 !tools/*.py
 !tools/PanelPreview/
 !tools/PanelPreview/**
+tools/PanelPreview/bin/
+tools/PanelPreview/obj/
 .local/
 AGENTS.md
 MEMORY.md

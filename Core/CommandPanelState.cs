@@ -18,7 +18,8 @@ public static class CommandPanelState
         string? SelectedCheckpoint,
         string? BlockedReason,
         IReadOnlyList<CheckpointSummary>? Archive = null,
-        CheckpointSummary? ArchiveSelection = null)
+        CheckpointSummary? ArchiveSelection = null,
+        bool FishingInstantSuccess = false)
     {
         public string Status => Faulted ? "插件异常" : CheckpointsActive ? "存读档可用" : "存读档受限";
 
@@ -28,21 +29,44 @@ public static class CommandPanelState
 
         public bool CanLoad => CheckpointsActive && !Faulted && !Busy && !Loading;
 
-        public string DialogueCheckpointText => DialogueCheckpoint is null ? "未建立" : "已建立";
+        public string DialogueCheckpointText => DialogueCheckpoint is not null
+            ? "已建立"
+            : Archive?.Any(item => item.Kind == CheckpointKind.PreDialogue) == true
+                ? "本轮未建立（存档库有历史）"
+                : "未建立";
 
-        public string SelectedCheckpointText => SelectedCheckpoint is null ? "未选择" : SelectedCheckpoint;
+        public string SelectedCheckpointText
+        {
+            get
+            {
+                if (SelectedCheckpoint is null) return "未选择";
+                var selected = Archive?.FirstOrDefault(item => item.Generation == SelectedCheckpoint);
+                if (selected is null) return SelectedCheckpoint;
+                return selected.Kind == CheckpointKind.PreDialogue
+                    ? "对话前 · " + (string.IsNullOrWhiteSpace(selected.Conversation) ? "未命名" : selected.Conversation)
+                    : "手动 · " + selected.DisplayFullTime();
+            }
+        }
 
         public string BlockedText => Faulted ? "上次操作异常，本次运行已停用存读档"
             : Busy ? "正在存读档"
             : Loading ? "正在读取检查点"
             : BlockedReason ?? "安全检查通过";
 
-        public string ArchiveCountText => Archive?.Count(item => item.Kind == CheckpointKind.Manual) is { } count and > 0
-            ? $"{count} 份手动存档"
-            : "暂无手动存档";
+        public string ArchiveCountText
+        {
+            get
+            {
+                var manual = Archive?.Count(item => item.Kind == CheckpointKind.Manual) ?? 0;
+                var dialogue = Archive?.Count(item => item.Kind == CheckpointKind.PreDialogue) ?? 0;
+                return manual + dialogue == 0
+                    ? "暂无存档"
+                    : $"共 {manual + dialogue} 份 · 手动 {manual} · 对话前 {dialogue}";
+            }
+        }
     }
 
-    public static void ToggleHome(bool focused, bool inputFieldFocused, bool canShowPanel = true)
+    public static void Toggle(bool focused, bool inputFieldFocused, bool canShowPanel = true)
     {
         if (!focused || inputFieldFocused) return;
         if (!canShowPanel) Open = false;
@@ -92,9 +116,28 @@ public static class CommandPanelState
         axis == "Mouse ScrollWheel" && Open && IsPointerBlocked(x, y);
 }
 
-public enum CommandPanelTab { Status, Archive }
+public enum CommandPanelTab { Status, Archive, Cheats }
 
 public enum CheckpointArchiveSortMode { CapturedTime, GameTime }
+
+public enum CheckpointArchiveFilter { All, Manual, PreDialogue }
+
+public static class CheckpointArchiveView
+{
+    public static IReadOnlyList<CheckpointSummary> Apply(
+        IEnumerable<CheckpointSummary> archive, CheckpointArchiveFilter filter, CheckpointArchiveSortMode mode)
+    {
+        var filtered = archive.Where(item => (item.Kind is CheckpointKind.Manual or CheckpointKind.PreDialogue) &&
+            (filter switch
+            {
+                CheckpointArchiveFilter.All => true,
+                CheckpointArchiveFilter.Manual => item.Kind == CheckpointKind.Manual,
+                CheckpointArchiveFilter.PreDialogue => item.Kind == CheckpointKind.PreDialogue,
+                _ => false
+            }));
+        return CheckpointArchiveSort.Apply(filtered, mode);
+    }
+}
 
 public static class CheckpointArchiveSort
 {
@@ -122,8 +165,15 @@ public static class CheckpointSummaryText
     public static string DisplayLine(this CheckpointSummary summary) =>
         $"{summary.CapturedAt:yyyy/MM/dd HH:mm:ss} · {summary.MapName ?? "未知地图"} · Lv.{summary.PlayerLevel?.ToString() ?? "?"} · 第{summary.Round?.ToString() ?? "?"}周目 第{summary.Day?.ToString() ?? "?"}天";
 
-    public static string DisplayTopLine(this CheckpointSummary summary) =>
+    public static string DisplayFullTime(this CheckpointSummary summary) =>
         summary.CapturedAt == default ? "时间未知" : summary.CapturedAt.ToString("yyyy/MM/dd HH:mm:ss");
+
+    public static string DisplayTopLine(this CheckpointSummary summary) =>
+        summary.CapturedAt == default
+            ? "时间未知"
+            : summary.Kind == CheckpointKind.PreDialogue && !string.IsNullOrWhiteSpace(summary.Conversation)
+                ? $"{summary.CapturedAt:MM/dd HH:mm:ss} · {summary.Conversation}"
+                : summary.DisplayFullTime();
 
     public static string DisplayDetailLine(this CheckpointSummary summary) =>
         $"{summary.MapName ?? "未知地图"} · Lv.{summary.PlayerLevel?.ToString() ?? "?"} · 第{summary.Round?.ToString() ?? "?"}周目 第{summary.Day?.ToString() ?? "?"}天";
@@ -131,8 +181,19 @@ public static class CheckpointSummaryText
     public static string NoteText(this CheckpointSummary summary) =>
         string.IsNullOrWhiteSpace(summary.Note) ? "未写备注" : summary.Note!;
 
-    public static string BadgeText(this CheckpointSummary summary) =>
-        !string.IsNullOrWhiteSpace(summary.Note) ? "已备注" : summary.Selected ? "读取目标" : summary.HasScreenshot ? "F5 历史" : "无截图";
+    public static string BadgeText(this CheckpointSummary summary) => summary.Kind == CheckpointKind.PreDialogue
+        ? summary.Selected ? "对话前·目标" : !string.IsNullOrWhiteSpace(summary.Note) ? "对话前·备注" : "对话前"
+        : !string.IsNullOrWhiteSpace(summary.Note) ? "已备注"
+        : summary.Selected ? "读取目标"
+        : summary.HasScreenshot ? "F5 历史"
+        : "无截图";
+
+    public static string KindText(this CheckpointSummary summary) => summary.Kind switch
+    {
+        CheckpointKind.Manual => "手动 F5 存档",
+        CheckpointKind.PreDialogue => "对话前自动检查点",
+        _ => "旧版检查点"
+    };
 }
 
 public readonly record struct CommandPanelLayout(float X, float Y, float Width, float Height)

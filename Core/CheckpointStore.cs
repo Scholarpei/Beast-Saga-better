@@ -6,11 +6,13 @@ namespace SafeDialogueTools.Core;
 
 public enum CheckpointKind { Manual, PreDialogue, Legacy }
 
-public sealed record CheckpointMetadata(CheckpointKind Kind, DateTime CapturedAt, string MapName, int PlayerLevel, int Round, int Day, string? Screenshot);
+public sealed record CheckpointMetadata(
+    CheckpointKind Kind, DateTime CapturedAt, string MapName, int PlayerLevel, int Round, int Day,
+    string? Screenshot, string? Conversation = null);
 
 public sealed record CheckpointSummary(
     string Generation, CheckpointKind Kind, DateTime CapturedAt, string? MapName, int? PlayerLevel, int? Round,
-    int? Day, bool HasScreenshot, string? ScreenshotPath, string? Note, bool Selected);
+    int? Day, bool HasScreenshot, string? ScreenshotPath, string? Note, bool Selected, string? Conversation = null);
 
 public sealed class CheckpointStore
 {
@@ -175,7 +177,7 @@ public sealed class CheckpointStore
                     metadata?.MapName, metadata?.PlayerLevel, metadata?.Round, metadata?.Day,
                     screenshot is not null && manifest.Files.ContainsKey(screenshot),
                     screenshotPath, notes.TryGetValue(name!, out var note) ? note : null,
-                    selected == name));
+                    selected == name, metadata?.Conversation));
             }
             catch (InvalidDataException) when (!verifyPayloads) { }
         }
@@ -289,6 +291,7 @@ public sealed class CheckpointStore
         metadata.CapturedAt != default &&
         metadata.PlayerLevel >= 1 &&
         metadata.Round >= 1 &&
+        (metadata.Conversation is null || metadata.Conversation.Length is > 0 and <= 120) &&
         (metadata.Screenshot is null || metadata.Screenshot == "thumbnail.png");
 
     private static string Hash(string path)

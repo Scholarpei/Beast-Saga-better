@@ -649,26 +649,33 @@ try
         Require(SafetyPolicy.Route(true, true, false, 1) == LoadRoute.Isolated));
     Test("ordinary native loads remain unchanged", () =>
         Require(SafetyPolicy.Route(false, false, false, 2) == LoadRoute.Original));
-    Test("home toggles only while the game is focused and no field accepts text", () =>
+    Test("panel toggles only while the game is focused and no field accepts text", () =>
     {
         CommandPanelState.Open = false;
-        CommandPanelState.ToggleHome(true, false);
+        CommandPanelState.Toggle(true, false);
         Require(CommandPanelState.Open);
-        CommandPanelState.ToggleHome(true, false);
+        CommandPanelState.Toggle(true, false);
         Require(!CommandPanelState.Open);
-        CommandPanelState.ToggleHome(true, true);
+        CommandPanelState.Toggle(true, true);
         Require(!CommandPanelState.Open);
-        CommandPanelState.ToggleHome(false, false);
+        CommandPanelState.Toggle(false, false);
         Require(!CommandPanelState.Open);
     });
-    Test("home stays closed outside gameplay and the menu reports guidance", () =>
+    Test("panel stays closed outside gameplay and the menu reports guidance", () =>
     {
         CommandPanelState.Open = false;
-        CommandPanelState.ToggleHome(true, false, canShowPanel: false);
+        CommandPanelState.Toggle(true, false, canShowPanel: false);
         Require(!CommandPanelState.Open);
         CommandPanelState.Open = true;
-        CommandPanelState.ToggleHome(true, false, canShowPanel: false);
+        CommandPanelState.Toggle(true, false, canShowPanel: false);
         Require(!CommandPanelState.Open);
+    });
+    Test("panel exit keys stay blocked on the closing frame", () =>
+    {
+        Require(PanelKeySuppression.Blocks(true, true, -1, 12));
+        Require(PanelKeySuppression.Blocks(true, false, 12, 12));
+        Require(!PanelKeySuppression.Blocks(true, false, 11, 12));
+        Require(!PanelKeySuppression.Blocks(false, true, 12, 12));
     });
     Test("starting a load closes the panel and releases pointer capture", () =>
     {

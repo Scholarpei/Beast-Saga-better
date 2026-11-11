@@ -33,7 +33,7 @@ app.MapGet("/api/state", () =>
 {
     var summaries = SafeList();
     selectedGeneration = summaries.FirstOrDefault(item => item.Generation == selectedGeneration)?.Generation ??
-                         summaries.FirstOrDefault(item => item.Kind == CheckpointKind.Manual)?.Generation;
+                         summaries.FirstOrDefault(item => item.Kind is CheckpointKind.Manual or CheckpointKind.PreDialogue)?.Generation;
     var selection = summaries.FirstOrDefault(item => item.Generation == selectedGeneration);
     return Results.Json(new
     {
@@ -46,7 +46,9 @@ app.MapGet("/api/state", () =>
             dialogueCheckpoint = "已建立",
             selectedCheckpoint = selectedGeneration,
             blocked = "安全检查通过",
-            archiveCount = summaries.Count(item => item.Kind == CheckpointKind.Manual)
+            archiveCount = summaries.Count(item => item.Kind is CheckpointKind.Manual or CheckpointKind.PreDialogue),
+            manualCount = summaries.Count(item => item.Kind == CheckpointKind.Manual),
+            dialogueCount = summaries.Count(item => item.Kind == CheckpointKind.PreDialogue)
         },
         checkpoints = summaries.Select(item => new
         {
@@ -57,6 +59,7 @@ app.MapGet("/api/state", () =>
             item.PlayerLevel,
             item.Round,
             item.Day,
+            item.Conversation,
             item.HasScreenshot,
             note = previewNotes.GetValueOrDefault(item.Generation, item.Note ?? ""),
             item.Selected,

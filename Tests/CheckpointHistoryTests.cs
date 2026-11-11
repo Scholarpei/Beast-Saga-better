@@ -13,7 +13,8 @@ internal static class CheckpointHistoryTests
         {
             var workingRoot = Path.Combine(root, "working");
             var store = new CheckpointStore(workingRoot, "v1", maxManualCheckpoints: 6, maxPreDialogueCheckpoints: 3);
-            string Create(CheckpointKind kind, string map = "禾兴城", int level = 12, int round = 1, bool screenshot = true, int day = 1)
+            string Create(CheckpointKind kind, string map = "禾兴城", int level = 12, int round = 1, bool screenshot = true, int day = 1,
+                string? conversation = null)
             {
                 return store.Create(
                     path =>
@@ -22,7 +23,7 @@ internal static class CheckpointHistoryTests
                         if (screenshot) File.WriteAllText(Path.Combine(path, "thumbnail.png"), "png");
                     },
                     _ => { },
-                    new CheckpointMetadata(kind, DateTime.Now, map, level, round, day, screenshot ? "thumbnail.png" : null));
+                    new CheckpointMetadata(kind, DateTime.Now, map, level, round, day, screenshot ? "thumbnail.png" : null, conversation));
             }
 
             Test("v2 checkpoints retain capture metadata and thumbnail integrity", () =>
@@ -125,6 +126,42 @@ internal static class CheckpointHistoryTests
                 Require(manual >= 6);
             });
 
+            Test("pre-dialogue conversation titles survive restart and can be filtered or selected", () =>
+            {
+                var dialogueRoot = Path.Combine(root, "dialogue-history");
+                var dialogueStore = new CheckpointStore(dialogueRoot, "v1");
+                var dialogue = dialogueStore.Create(
+                    path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.PreDialogue, new DateTime(2026, 11, 11, 16, 7, 17),
+                        "禾兴官府", 11, 1, 6, null, "巨蛟帮"));
+                var manual = dialogueStore.Create(
+                    path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.Manual, new DateTime(2026, 11, 11, 16, 6, 56),
+                        "禾兴官府", 11, 1, 6, null));
+
+                var reopened = new CheckpointStore(dialogueRoot, "v1");
+                var dialogueRecord = reopened.List().Single(item => item.Generation == dialogue);
+                Require(dialogueRecord.Kind == CheckpointKind.PreDialogue && dialogueRecord.Conversation == "巨蛟帮");
+                Require(dialogueRecord.DisplayTopLine() == "11/11 16:07:17 · 巨蛟帮", dialogueRecord.DisplayTopLine());
+                Require(dialogueRecord.DisplayFullTime() == "2026/11/11 16:07:17", dialogueRecord.DisplayFullTime());
+                Require(dialogueRecord.BadgeText() == "对话前");
+                Require(dialogueRecord.KindText() == "对话前自动检查点");
+                var dialogueState = new CommandPanelState.State(true, false, false, false, false, true, false,
+                    null, dialogue, null, new[] { dialogueRecord }, dialogueRecord);
+                Require(dialogueState.DialogueCheckpointText == "本轮未建立（存档库有历史）");
+                Require(dialogueState.SelectedCheckpointText == "对话前 · 巨蛟帮");
+
+                var all = CheckpointArchiveView.Apply(reopened.List(), CheckpointArchiveFilter.All, CheckpointArchiveSortMode.CapturedTime);
+                Require(all.Count == 2 && all.Any(item => item.Generation == dialogue) && all.Any(item => item.Generation == manual));
+                var dialogueOnly = CheckpointArchiveView.Apply(reopened.List(), CheckpointArchiveFilter.PreDialogue, CheckpointArchiveSortMode.CapturedTime);
+                Require(dialogueOnly.Count == 1 && dialogueOnly[0].Generation == dialogue);
+                var manualOnly = CheckpointArchiveView.Apply(reopened.List(), CheckpointArchiveFilter.Manual, CheckpointArchiveSortMode.CapturedTime);
+                Require(manualOnly.Count == 1 && manualOnly[0].Generation == manual);
+
+                reopened.Select(dialogue);
+                Require(new CheckpointStore(dialogueRoot, "v1").Selected() == dialogue);
+            });
+
             Test("legacy v1 checkpoints remain readable and are marked legacy", () =>
             {
                 var generation = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N");
@@ -182,12 +219,23 @@ internal static class CheckpointHistoryTests
                 Require(CommandPanelState.Tab == CommandPanelTab.Status);
                 CommandPanelState.SelectTab(CommandPanelTab.Archive);
                 Require(CommandPanelState.Tab == CommandPanelTab.Archive);
+                CommandPanelState.SelectTab(CommandPanelTab.Cheats);
+                Require(CommandPanelState.Tab == CommandPanelTab.Cheats);
                 var summary = new CheckpointSummary("generation", CheckpointKind.Manual, DateTime.Now, "禾兴城", 20, 2, 9, true, "path", "备注", true);
                 var state = new CommandPanelState.State(true, false, false, false, false, true, true, null, "generation",
-                    null, new[] { summary }, summary);
-                Require(state.ArchiveCountText == "1 份手动存档");
+                    null, new[] { summary }, summary, true);
+                Require(state.ArchiveCountText == "共 1 份 · 手动 1 · 对话前 0");
+                Require(state.FishingInstantSuccess);
                 Require(summary.DisplayLine().Contains("禾兴城") && summary.DisplayLine().Contains("Lv.20") && summary.DisplayLine().Contains("第2周目 第9天"));
                 Require(summary.NoteText() == "备注" && summary.BadgeText() == "已备注");
+            });
+
+            Test("fishing cheat only finishes an active fishing round", () =>
+            {
+                Require(CheatPolicy.ShouldFinishFishing(true, true, 10));
+                Require(!CheatPolicy.ShouldFinishFishing(false, true, 10));
+                Require(!CheatPolicy.ShouldFinishFishing(true, false, 10));
+                Require(!CheatPolicy.ShouldFinishFishing(true, true, 0));
             });
 
             Test("archive rows split long capture information across two readable lines", () =>
@@ -244,7 +292,7 @@ internal static class CheckpointHistoryTests
                 CommandPanelState.Reset();
                 var state = new CommandPanelState.State(false, false, false, false, false, true, false, null, null,
                     "游戏尚未准备好");
-                Require(!state.CanSave && !state.CanLoad && state.ArchiveCountText == "暂无手动存档");
+                Require(!state.CanSave && !state.CanLoad && state.ArchiveCountText == "暂无存档");
             });
 
             Test("load work cleanup removes only validated generation folders", () =>
