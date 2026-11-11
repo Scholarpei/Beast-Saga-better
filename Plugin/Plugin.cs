@@ -501,15 +501,14 @@ public sealed class RuntimeDriver : MonoBehaviour
     public void OnGUI()
     {
         Plugin.GuiFrames++;
-        CommandPanelState.ClearPointerBounds();
         if (Time.realtimeSinceStartup <= Plugin.NoticeUntil && !string.IsNullOrEmpty(Plugin.Notice))
             DrawMessage(new Rect(Screen.width * 0.2f, 24, Screen.width * 0.6f, 46), Plugin.Notice);
         RuntimeDriver.ClearStaleHover(Indicators.HoveredButton);
         if (CommandPanelState.Open)
             DrawCommandPanel();
-        CommandPanelState.ClearPointerBounds();
         if (Plugin.EnableIndicators.Value && Plugin.IsDialogue && Indicators.HoveredButton != null && !string.IsNullOrEmpty(Indicators.HoverHint))
             DrawFutureWindow();
+        if (!CommandPanelState.Open) CommandPanelState.ClearPointerBounds();
     }
 
     private void DrawMessage(Rect bounds, string message)

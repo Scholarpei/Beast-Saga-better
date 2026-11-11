@@ -79,6 +79,9 @@ public static class CommandPanelState
         pointerBounds.Width > 0 && pointerBounds.Height > 0 &&
         x >= pointerBounds.X && x < pointerBounds.X + pointerBounds.Width &&
         y >= pointerBounds.Y && y < pointerBounds.Y + pointerBounds.Height;
+
+    public static bool ShouldBlockMouseWheel(string axis, float x, float y) =>
+        axis == "Mouse ScrollWheel" && Open && IsPointerBlocked(x, y);
 }
 
 public enum CommandPanelTab { Status, Archive }

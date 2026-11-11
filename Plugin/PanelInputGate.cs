@@ -36,3 +36,33 @@ internal static class PanelMouseButtonUpGate
         return false;
     }
 }
+
+[HarmonyPatch(typeof(Input), nameof(Input.GetAxis))]
+internal static class PanelMouseWheelAxisGate
+{
+    private static void Postfix(string axisName, ref float __result)
+    {
+        if (__result == 0 || !CommandPanelState.ShouldBlockMouseWheel(axisName, Input.mousePosition.x, Input.mousePosition.y)) return;
+        __result = 0;
+    }
+}
+
+[HarmonyPatch(typeof(Input), nameof(Input.GetAxisRaw))]
+internal static class PanelMouseWheelRawAxisGate
+{
+    private static void Postfix(string axisName, ref float __result)
+    {
+        if (__result == 0 || !CommandPanelState.ShouldBlockMouseWheel(axisName, Input.mousePosition.x, Input.mousePosition.y)) return;
+        __result = 0;
+    }
+}
+
+[HarmonyPatch(typeof(Input), nameof(Input.mouseScrollDelta), MethodType.Getter)]
+internal static class PanelMouseScrollDeltaGate
+{
+    private static void Postfix(ref Vector2 __result)
+    {
+        if (__result.y == 0 || !CommandPanelState.ShouldBlockMouseWheel("Mouse ScrollWheel", Input.mousePosition.x, Input.mousePosition.y)) return;
+        __result.y = 0;
+    }
+}

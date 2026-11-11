@@ -194,6 +194,18 @@ internal static class CheckpointHistoryTests
                 Require(!CommandPanelState.IsPointerBlocked(layout.X + 1, layout.Y + 1));
             });
 
+            Test("command panel blocks only mouse wheel input inside its bounds", () =>
+            {
+                CommandPanelState.Open = true;
+                CommandPanelState.SetPointerBounds(100, 100, 400, 300);
+                Require(CommandPanelState.ShouldBlockMouseWheel("Mouse ScrollWheel", 200, 200));
+                Require(!CommandPanelState.ShouldBlockMouseWheel("Mouse ScrollWheel", 50, 200));
+                Require(!CommandPanelState.ShouldBlockMouseWheel("Horizontal", 200, 200));
+                CommandPanelState.ClearPointerBounds();
+                Require(!CommandPanelState.ShouldBlockMouseWheel("Mouse ScrollWheel", 200, 200));
+                CommandPanelState.Open = false;
+            });
+
             Test("early panel state tolerates unavailable game managers", () =>
             {
                 CommandPanelState.Reset();
