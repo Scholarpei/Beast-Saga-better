@@ -845,6 +845,9 @@ try
     var cheatFeatures = CheatFeatureTests.Run();
     checks += cheatFeatures.Checks;
     failures += cheatFeatures.Failures;
+    var itemFeatures = ItemFeatureTests.Run();
+    checks += itemFeatures.Checks;
+    failures += itemFeatures.Failures;
 }
 finally
 {
