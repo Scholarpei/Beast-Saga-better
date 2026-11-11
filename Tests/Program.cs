@@ -115,6 +115,46 @@ try
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("后续条件未知") && !hint.Contains("宝物"), hint);
     });
+    Test("single variable-gated option predicts its real future", () =>
+    {
+        DialogueVariableState.Reset();
+        DialogueVariableState.Variables["花铺老板的孩子"] = "0";
+        var option = new DialogueEntry { id = 619 };
+        var answer = new DialogueEntry { id = 622 };
+        var confirmation = new DialogueEntry
+        {
+            id = 623,
+            conditionsString = "Variable[\"花铺老板的孩子\"] == 0"
+        };
+        var questStart = new DialogueEntry
+        {
+            id = 3309,
+            userScript = "SetQuestState(\"支线命值几钱\", \"active\");\nSetQuestEntryState(\"支线命值几钱\", 1, \"active\")"
+        };
+        option.outgoingLinks.Add(new Link(answer));
+        answer.outgoingLinks.Add(new Link(confirmation));
+        confirmation.outgoingLinks.Add(new Link(questStart));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("任务：支线命值几钱 → active"), hint);
+        Require(hint.Contains("任务：支线命值几钱 第1步 → active"), hint);
+        Require(!hint.Contains("后续条件未知"), hint);
+        Require(DialogueVariableState.Reads == 1, DialogueVariableState.Reads.ToString());
+    });
+    Test("unknown variable value still stops before leaking rewards", () =>
+    {
+        DialogueVariableState.Reset();
+        var option = new DialogueEntry { id = 619 };
+        var confirmation = new DialogueEntry
+        {
+            id = 623,
+            conditionsString = "Variable[\"花铺老板的孩子\"] == 0"
+        };
+        var questStart = new DialogueEntry { id = 3309, userScript = "SetQuestState(\"支线命值几钱\", \"active\")" };
+        option.outgoingLinks.Add(new Link(confirmation));
+        confirmation.outgoingLinks.Add(new Link(questStart));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("后续条件未知") && !hint.Contains("active"), hint);
+    });
     Test("cycles terminate and never multiply the same reward", () =>
     {
         var entry = new DialogueEntry { userScript = "AwardItem('铜钱',1)" };

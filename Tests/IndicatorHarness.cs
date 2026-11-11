@@ -68,6 +68,19 @@ namespace SafeDialogueTools.Tests
             entry.outgoingLinks.Add(new Link(failure));
             return new Response { destinationEntry = entry, formattedText = new FormattedText { text = "仿造戒指（判定：巧艺20）" } };
         }
+
+    }
+
+    internal static class DialogueVariableState
+    {
+        internal static readonly Dictionary<string, string> Variables = new();
+        internal static int Reads;
+
+        internal static void Reset()
+        {
+            Variables.Clear();
+            Reads = 0;
+        }
     }
 }
 
@@ -123,6 +136,27 @@ namespace PixelCrushers.DialogueSystem
     internal sealed class ConversationController { internal void Close() { } }
     internal sealed class Database { internal DialogueEntry GetDialogueEntry(Link link) => link.Entry; }
     internal static class DialogueManager { internal static Database masterDatabase = new(); }
+    internal static class DialogueLua
+    {
+        internal static Lua.Result GetVariable(string name)
+        {
+            SafeDialogueTools.Tests.DialogueVariableState.Reads++;
+            return new Lua.Result(SafeDialogueTools.Tests.DialogueVariableState.Variables.TryGetValue(name, out var value) ? value : null);
+        }
+    }
+    internal sealed class Lua
+    {
+        internal readonly struct Result(object? value)
+        {
+            internal bool HasReturnValue => value != null;
+            internal bool IsNumber => double.TryParse(value?.ToString(), out _);
+            internal bool IsBool => value is bool;
+            internal bool IsString => value is string;
+            internal float AsFloat => float.Parse(value!.ToString()!, System.Globalization.CultureInfo.InvariantCulture);
+            internal bool AsBool => (bool)value!;
+            internal string AsString => (string)value!;
+        }
+    }
 }
 
 namespace SafeDialogueTools

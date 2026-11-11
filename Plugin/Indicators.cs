@@ -186,7 +186,8 @@ internal static class Indicators
                 foreach (var link in links)
                 {
                     var next = DialogueManager.masterDatabase?.GetDialogueEntry(link);
-                    if (next == null || !string.IsNullOrWhiteSpace(next.conditionsString) || successors.Contains(next)) continue;
+                    if (next == null || successors.Contains(next)) continue;
+                    if (!string.IsNullOrWhiteSpace(next.conditionsString) && !VariableConditionIsTrue(next.conditionsString)) continue;
                     successors.Add(next);
                 }
                 if (successors.Count == 0)
@@ -294,6 +295,18 @@ internal static class Indicators
             if (expected.Value) chosen = next;
         }
         return chosen;
+    }
+
+    private static bool VariableConditionIsTrue(string expression)
+    {
+        var spec = CheckPreview.ParseVariableEquality(expression);
+        if (spec == null) return false;
+        var result = DialogueLua.GetVariable(spec.Variable);
+        if (!result.HasReturnValue) return false;
+        if (spec.Expected is bool expectedBool) return result.IsBool && result.AsBool == expectedBool;
+        if (spec.Expected is double expectedNumber)
+            return result.IsNumber && float.IsFinite(result.AsFloat) && Math.Abs(result.AsFloat - expectedNumber) < 0.000001;
+        return result.IsString && result.AsString == (string)spec.Expected;
     }
 
     private static System.Collections.Generic.IEnumerable<Link> EnumerateLinks(

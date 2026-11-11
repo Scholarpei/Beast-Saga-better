@@ -6,6 +6,7 @@ namespace SafeDialogueTools.Core;
 public sealed record CheckResult(bool? Passed, string Text);
 public sealed record CheckSpec(string Function, string Attribute, string Operation, double Threshold, bool Expected);
 public sealed record ItemCountSpec(string Item, string Operation, double Threshold, bool Expected);
+public sealed record VariableEqualitySpec(string Variable, object Expected);
 
 public static class CheckPreview
 {
@@ -14,6 +15,9 @@ public static class CheckPreview
         RegexOptions.CultureInvariant);
     private static readonly Regex ItemCountCheck = new(
         "\\A\\s*IsPlayerItemCount\\s*\\(\\s*(['\"])([^'\"\\r\\n]+)\\1\\s*,\\s*(['\"])([^'\"\\r\\n]+)\\3\\s*,\\s*(-?\\d+(?:\\.\\d+)?)\\s*\\)\\s*(?:==\\s*(true|false))?\\s*\\z",
+        RegexOptions.CultureInvariant);
+    private static readonly Regex VariableEqualityCheck = new(
+        "\\A\\s*Variable\\s*\\[\\s*(['\"])(?<name>[^'\"\\r\\n]+)\\1\\s*\\]\\s*==\\s*(?<value>true|false|-?\\d+(?:\\.\\d+)?|'[^'\\r\\n]*'|\"[^\"\\r\\n]*\")\\s*\\z",
         RegexOptions.CultureInvariant);
 
     public static CheckSpec? Parse(string expression)
@@ -28,6 +32,24 @@ public static class CheckPreview
         var match = ItemCountCheck.Match(expression ?? "");
         if (!match.Success || !double.TryParse(match.Groups[5].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var threshold) || !double.IsFinite(threshold)) return null;
         return new(match.Groups[2].Value, match.Groups[4].Value, threshold, match.Groups[6].Value != "false");
+    }
+
+    public static VariableEqualitySpec? ParseVariableEquality(string expression)
+    {
+        var match = VariableEqualityCheck.Match(expression ?? "");
+        if (!match.Success) return null;
+        var value = match.Groups["value"].Value;
+        object expected = value switch
+        {
+            "true" => true,
+            "false" => false,
+            _ => value.StartsWith('\'') || value.StartsWith('"')
+                ? value[1..^1]
+                : double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && double.IsFinite(number)
+                    ? number
+                    : null!
+        };
+        return expected == null ? null : new(match.Groups["name"].Value, expected);
     }
 
     public static CheckResult EvaluateItemCount(string expression, Func<string, double?> read)
