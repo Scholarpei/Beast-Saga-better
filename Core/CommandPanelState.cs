@@ -222,11 +222,13 @@ public readonly record struct CommandPanelMetrics(
     public static CommandPanelMetrics Create(CommandPanelLayout layout)
     {
         var scale = Math.Clamp(layout.Height / 720f, 0.72f, 3f);
+        var listMaximum = Math.Max(0, Math.Min(760f, layout.Width * 0.38f));
+        var previewMaximum = Math.Max(0, Math.Min(900f, layout.Height * 0.64f));
         return new(
             scale,
-            Math.Clamp(layout.Width * 0.26f, 280f, Math.Min(760f, layout.Width * 0.38f)),
-            Math.Clamp(layout.Height * 0.56f, 260f, Math.Min(900f, layout.Height * 0.64f)),
-            Math.Clamp(96f * scale, 84f, 136f),
+            Math.Clamp(layout.Width * 0.26f, Math.Min(280f, listMaximum), listMaximum),
+            Math.Clamp(layout.Height * 0.56f, Math.Min(260f, previewMaximum), previewMaximum),
+            96f * scale,
             Math.Max(6f, 9f * scale),
             Math.Clamp(46f * scale, 44f, 64f));
     }

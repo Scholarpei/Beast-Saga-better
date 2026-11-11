@@ -850,6 +850,9 @@ try
     var itemFeatures = ItemFeatureTests.Run();
     checks += itemFeatures.Checks;
     failures += itemFeatures.Failures;
+    var panelRegressions = PanelRegressionTests.Run();
+    checks += panelRegressions.Checks;
+    failures += panelRegressions.Failures;
 }
 finally
 {

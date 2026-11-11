@@ -27,6 +27,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private readonly Dictionary<string, string> cheatDrafts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> cheatDraftSources = new(StringComparer.Ordinal);
     private readonly List<Texture2D> cheatTextures = new();
+    private readonly PanelStyleGeneration cheatStyleGeneration = new();
 
     private GUIStyle? cheatH2Style;
     private GUIStyle? cheatPageTitleStyle;
@@ -89,13 +90,13 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var oldScrollbarThumb = skin.verticalScrollbarThumb;
         var oldScrollbarUp = skin.verticalScrollbarUpButton;
         var oldScrollbarDown = skin.verticalScrollbarDownButton;
-        skin.verticalScrollbar = cheatScrollbarStyle!;
-        skin.verticalScrollbarThumb = cheatScrollbarThumbStyle!;
-        skin.verticalScrollbarUpButton = cheatScrollbarEmptyStyle!;
-        skin.verticalScrollbarDownButton = cheatScrollbarEmptyStyle!;
-        GUI.matrix = Matrix4x4.TRS(origin, Quaternion.identity, new Vector3(scale, scale, 1));
         try
         {
+            skin.verticalScrollbar = cheatScrollbarStyle!;
+            skin.verticalScrollbarThumb = cheatScrollbarThumbStyle!;
+            skin.verticalScrollbarUpButton = cheatScrollbarEmptyStyle!;
+            skin.verticalScrollbarDownButton = cheatScrollbarEmptyStyle!;
+            GUI.matrix = Matrix4x4.TRS(origin, Quaternion.identity, new Vector3(scale, scale, 1));
             DrawCheatHeading(designWidth);
             var footerY = designBottom - 15f;
             var bodyBottom = footerY - 10f;
@@ -161,7 +162,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             title, description, pill, pillStyle);
         var content = new Rect(bounds.x, bounds.y + CheatPageHeadHeight,
             bounds.width, bounds.height - CheatPageHeadHeight);
-        GUI.enabled = reason is null;
+        var previousEnabled = GUI.enabled;
+        GUI.enabled = previousEnabled && reason is null;
         GUI.BeginGroup(content);
         try
         {
@@ -184,7 +186,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         finally
         {
             GUI.EndGroup();
-            GUI.enabled = true;
+            GUI.enabled = previousEnabled;
         }
     }
 
@@ -281,6 +283,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var contentHeight = CharacterContentHeight(option);
         cheatScroll = GUI.BeginScrollView(scrollRect, cheatScroll,
             new Rect(0, 0, contentWidth, contentHeight));
+        try
+        {
         var y = 0f;
         if (option.CanEditStats)
         {
@@ -300,7 +304,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         }
         if (option.Kind == CheatCharacterKind.Known)
             DrawKnownSection(new Rect(0, y, contentWidth, CheatKnownHeight));
-        GUI.EndScrollView();
+        }
+        finally { GUI.EndScrollView(); }
         DrawCheatScrollbar(scrollRect, cheatScroll, contentHeight);
         if (cheatCharacterMenuOpen) DrawCharacterMenu(bounds, pickerRect, options);
     }
@@ -470,6 +475,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var cardWidth = (contentWidth - gap * 2) / 3f;
         cheatScroll = GUI.BeginScrollView(scrollRect, cheatScroll,
             new Rect(0, 0, contentWidth, CheatPointCardHeight + 14 + 116));
+        try
+        {
         DrawPointCard(new Rect(0, 0, cardWidth, CheatPointCardHeight), "属性点", CheatPointPool.Attribute,
             points.AttributeAvailable, points.AttributeUsed, points.AttributeTotal, points.AttributeAvailable);
         DrawPointCard(new Rect(cardWidth + gap, 0, cardWidth, CheatPointCardHeight), "生活点", CheatPointPool.Life,
@@ -482,7 +489,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         DrawSectionHeader(note, "说明", "", null, null, null);
         DrawNotice(note.x + 14, note.y + 48, note.width - 28,
             "生活点不是独立点数池，而是由生活技能等级换算；要增加生活点，请在“角色属性”页提高生活技能等级。属性点和特性点可以直接写入。");
-        GUI.EndScrollView();
+        }
+        finally { GUI.EndScrollView(); }
         DrawCheatScrollbar(scrollRect, cheatScroll, CheatPointCardHeight + 14 + 116);
     }
 
@@ -569,6 +577,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var listRect = new Rect(menu.x + 6, menu.y + 6, menu.width - 12, menu.height - 12);
         cheatCharacterMenuScroll = GUI.BeginScrollView(listRect, cheatCharacterMenuScroll,
             new Rect(0, 0, listRect.width - 7, Math.Max(listRect.height, options.Count * 34f)));
+        try
+        {
         var rowY = 0f;
         foreach (var item in options)
         {
@@ -585,7 +595,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             GUI.Label(new Rect(row.xMax - 70, row.y, 60, row.height), KindLabel(item.Kind), cheatHintStyle);
             rowY += 34f;
         }
-        GUI.EndScrollView();
+        }
+        finally { GUI.EndScrollView(); }
         if (Event.current.type == EventType.MouseDown &&
             !menu.Contains(Event.current.mousePosition) && !pickerRect.Contains(Event.current.mousePosition))
             cheatCharacterMenuOpen = false;
@@ -653,14 +664,17 @@ public sealed partial class RuntimeDriver : MonoBehaviour
 
     private void DrawCheatScrollbar(Rect view, Vector2 scroll, float contentHeight)
     {
-        if (contentHeight <= view.height + 1) return;
-        var track = new Rect(view.xMax - 4, view.y, 4, view.height);
-        GUI.Box(track, GUIContent.none, cheatCellStyle);
-        var thumbHeight = Math.Max(24, view.height * view.height / contentHeight);
-        var max = contentHeight - view.height;
-        var progress = max <= 0 ? 0 : Math.Clamp(scroll.y / max, 0, 1);
-        GUI.Box(new Rect(track.x, view.y + progress * (view.height - thumbHeight), 4, thumbHeight),
-            GUIContent.none, cheatScrollbarThumbStyle!);
+        if (!PanelScrollbarGeometry.TryCreate(new PanelRect(view.x, view.y, view.width, view.height),
+                contentHeight, scroll.y, out var geometry)) return;
+        var previous = GUI.color;
+        try
+        {
+            GUI.color = new Color32(13, 20, 30, 133);
+            GUI.DrawTexture(UnityRect(geometry.Track), Texture2D.whiteTexture);
+            GUI.color = new Color32(93, 182, 197, 160);
+            GUI.DrawTexture(UnityRect(geometry.Thumb), Texture2D.whiteTexture);
+        }
+        finally { GUI.color = previous; }
     }
 
     private void DrawCheatMessage(float width, float height)
@@ -924,7 +938,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
 
     private void EnsureCheatStyles()
     {
-        if (cheatH2Style is not null) return;
+        var scale = CommandPanelMetrics.Create(CommandPanelLayout.Create(Screen.width, Screen.height)).Scale;
+        if (cheatStyleGeneration.Matches(Screen.width, Screen.height, scale, CheatStylesAlive() && CheatTexturesAlive())) return;
+        DestroyCheatTextures();
         var section = new Color32(134, 217, 229, 255);
         var text = new Color32(212, 226, 241, 255);
         var muted = new Color32(145, 164, 190, 255);
@@ -995,7 +1011,28 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         cheatScrollbarThumbStyle = BoxStyle(new Color32(93, 182, 197, 160), new Color32(0, 0, 0, 0), 3);
         cheatScrollbarThumbStyle.fixedWidth = 7f;
         cheatScrollbarEmptyStyle = new GUIStyle { fixedWidth = 7f, fixedHeight = 0f };
+        if (!CheatStylesAlive() || !CheatTexturesAlive()) throw new InvalidOperationException("修改面板样式未完整初始化");
+        cheatStyleGeneration.Complete(Screen.width, Screen.height, scale);
     }
+
+    private bool CheatTexturesAlive() => cheatTextures.Count > 0 && cheatTextures.All(texture => texture != null);
+
+    private bool CheatStylesAlive() => cheatH2Style is not null && cheatPageTitleStyle is not null &&
+        cheatSectionTitleStyle is not null && cheatHintStyle is not null && cheatSmallStyle is not null &&
+        cheatTinyStyle is not null && cheatLabelStyle is not null && cheatValueStyle is not null &&
+        cheatFlowStyle is not null && cheatFlowStrongStyle is not null && cheatBigStyle is not null &&
+        cheatPinkStyle is not null && cheatInputStyle is not null && cheatCenterInputStyle is not null &&
+        cheatButtonStyle is not null && cheatPrimaryButtonStyle is not null && cheatSectionActionStyle is not null &&
+        cheatPickerStyle is not null && cheatPickerItemStyle is not null && cheatPickerItemActiveStyle is not null &&
+        cheatSidebarStyle is not null && cheatSidebarButtonStyle is not null && cheatSidebarActiveStyle is not null &&
+        cheatSidebarDisabledStyle is not null && cheatCardStyle is not null && cheatMenuStyle is not null &&
+        cheatCellStyle is not null && cheatDisabledCellStyle is not null && cheatPointCardStyle is not null &&
+        cheatNoticeBgStyle is not null && cheatNoticeTextStyle is not null && cheatPillStyle is not null &&
+        cheatPillWarnStyle is not null && cheatPillOkStyle is not null && cheatBadgeStyle is not null &&
+        cheatToastStyle is not null && cheatSwitchOffStyle is not null && cheatSwitchOnStyle is not null &&
+        cheatKnobStyle is not null && cheatKnobOnStyle is not null && cheatKnobOffStyle is not null &&
+        cheatEmptyStyle is not null && cheatScrollbarStyle is not null && cheatScrollbarThumbStyle is not null &&
+        cheatScrollbarEmptyStyle is not null;
 
     private GUIStyle LabelStyle(int size, Color32 color, FontStyle fontStyle = FontStyle.Normal,
         TextAnchor anchor = TextAnchor.MiddleLeft, bool wrap = false) =>
@@ -1109,6 +1146,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
 
     private void DestroyCheatTextures()
     {
+        cheatStyleGeneration.Invalidate();
         foreach (var texture in cheatTextures)
             if (texture != null) UnityEngine.Object.Destroy(texture);
         cheatTextures.Clear();

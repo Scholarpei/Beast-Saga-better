@@ -64,6 +64,10 @@
 - [ ] 扩展只在 TestMode 启用的目录/图标/物品状态诊断和增删测试命令，不开放正式远程入口。
 - [ ] 运行完整测试及 `./tools/sdk/dotnet.exe build Plugin/SafeDialogueTools.csproj -c Release --nologo`，要求 0 errors、0 warnings；提交任务文件并报告。
 
+### Regression gate before Task 3: status/archive scaling and scrollbar failure
+
+User supplied 2560×1440 screenshots after manual item testing: status/archive labels overlap, and a repeated native GUI.Box null exception originates in DrawCheatScrollbar. Repair mixed scaled fonts/unscaled geometry, allocate text by measured height and scroll long bodies, rebuild complete styles on resolution/lifetime invalidation, replace thin scrollbar Box calls with bounded rectangle drawing, and contain a draw failure once rather than flood logs. Preserve working cheat-page style and all save/edit safeguards. Detailed test-first brief and evidence live in `.superpowers/sdd/2026-11-11-items-combat/ui-regression-brief.md`; run the complete suite and Release build, review the fixed diff, then coordinate a sandbox restart with the user. Do not replace their running DLL during manual testing.
+
 ### Task 3: Guarded native combat operations and panel
 
 **Files:** Create `Core/CheatCombat.cs`, `Tests/CombatFeatureTests.cs`, `Plugin/CombatEditor.cs`, `Plugin/CombatPanel.cs`; modify `Plugin/Plugin.cs`, `Plugin/CheatPanel.cs`, `Core/CheatPanel.cs`, `Plugin/TestBridge.cs`, `Tests/Program.cs`。
