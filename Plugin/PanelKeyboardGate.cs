@@ -81,9 +81,9 @@ internal static class PanelKeyUpGate
 [HarmonyPatch(typeof(Input), nameof(Input.GetKeyDown), new[] { typeof(string) })]
 internal static class PanelKeyNameDownGate
 {
-    private static bool Prefix(string keyName, ref bool __result)
+    private static bool Prefix(string __0, ref bool __result)
     {
-        if (PanelKeyGate.ReadingOwnInput || !PanelKeyGate.ShouldBlockName(keyName)) return true;
+        if (PanelKeyGate.ReadingOwnInput || !PanelKeyGate.ShouldBlockName(__0)) return true;
         __result = false;
         return false;
     }
@@ -92,9 +92,9 @@ internal static class PanelKeyNameDownGate
 [HarmonyPatch(typeof(Input), nameof(Input.GetKey), new[] { typeof(string) })]
 internal static class PanelKeyNameHeldGate
 {
-    private static bool Prefix(string keyName, ref bool __result)
+    private static bool Prefix(string __0, ref bool __result)
     {
-        if (PanelKeyGate.ReadingOwnInput || !PanelKeyGate.ShouldBlockName(keyName)) return true;
+        if (PanelKeyGate.ReadingOwnInput || !PanelKeyGate.ShouldBlockName(__0)) return true;
         __result = false;
         return false;
     }
@@ -103,9 +103,9 @@ internal static class PanelKeyNameHeldGate
 [HarmonyPatch(typeof(Input), nameof(Input.GetKeyUp), new[] { typeof(string) })]
 internal static class PanelKeyNameUpGate
 {
-    private static bool Prefix(string keyName, ref bool __result)
+    private static bool Prefix(string __0, ref bool __result)
     {
-        if (PanelKeyGate.ReadingOwnInput || !PanelKeyGate.ShouldBlockName(keyName)) return true;
+        if (PanelKeyGate.ReadingOwnInput || !PanelKeyGate.ShouldBlockName(__0)) return true;
         __result = false;
         return false;
     }
@@ -114,9 +114,9 @@ internal static class PanelKeyNameUpGate
 [HarmonyPatch(typeof(Input), nameof(Input.GetButtonDown))]
 internal static class PanelCancelButtonDownGate
 {
-    private static bool Prefix(string buttonName, ref bool __result)
+    private static bool Prefix(string __0, ref bool __result)
     {
-        if (!IsCancelButton(buttonName) || !PanelKeyGate.ShouldBlockCancelButton()) return true;
+        if (!IsCancelButton(__0) || !PanelKeyGate.ShouldBlockCancelButton()) return true;
         __result = false;
         return false;
     }
@@ -128,9 +128,9 @@ internal static class PanelCancelButtonDownGate
 [HarmonyPatch(typeof(Input), nameof(Input.GetButton))]
 internal static class PanelCancelButtonHeldGate
 {
-    private static bool Prefix(string buttonName, ref bool __result)
+    private static bool Prefix(string __0, ref bool __result)
     {
-        if (!string.Equals(buttonName, "Cancel", StringComparison.OrdinalIgnoreCase) ||
+        if (!string.Equals(__0, "Cancel", StringComparison.OrdinalIgnoreCase) ||
             !PanelKeyGate.ShouldBlockCancelButton()) return true;
         __result = false;
         return false;
@@ -140,9 +140,9 @@ internal static class PanelCancelButtonHeldGate
 [HarmonyPatch(typeof(Input), nameof(Input.GetButtonUp))]
 internal static class PanelCancelButtonUpGate
 {
-    private static bool Prefix(string buttonName, ref bool __result)
+    private static bool Prefix(string __0, ref bool __result)
     {
-        if (!string.Equals(buttonName, "Cancel", StringComparison.OrdinalIgnoreCase) ||
+        if (!string.Equals(__0, "Cancel", StringComparison.OrdinalIgnoreCase) ||
             !PanelKeyGate.ShouldBlockCancelButton()) return true;
         __result = false;
         return false;
