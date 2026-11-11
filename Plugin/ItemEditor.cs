@@ -37,6 +37,9 @@ internal static class ItemEditor
     internal static IReadOnlyList<CheatItemEntry> Results { get; private set; } = Array.Empty<CheatItemEntry>();
     internal static Dictionary<string, int> Counts { get; private set; } = new(StringComparer.Ordinal);
     internal static Dictionary<string, OwnedEquipment[]> Equipment { get; private set; } = new(StringComparer.Ordinal);
+    internal static ItemDisplayPolicyCache DisplayPolicy { get; } = new();
+    private static Dictionary<string, ItemEquipmentIndex> equipmentIndices = new(StringComparer.Ordinal);
+    private static long snapshotVersion;
     private static Dictionary<string, IntPtr> stacks = new(StringComparer.Ordinal);
     internal static string? Block { get; private set; } = "等待游戏就绪";
     internal static string Status { get; private set; } = "目录尚未加载";
@@ -57,6 +60,7 @@ internal static class ItemEditor
     {
         if (pending != null) LastResult = new ItemOperationResult(pending.Id, false, reason + "；请求已取消，未写入", pending.Key, -1, -1, session.ProtectedGeneration);
         epoch++; session.Reset(); pending = null; Counts.Clear(); Equipment.Clear(); stacks.Clear();
+        equipmentIndices.Clear(); snapshotVersion++; DisplayPolicy.SetDraft("", "1"); DisplayPolicy.ClearSelection();
         ProtectionDisplay = "会话失效；下次提交重新建立并校验";
         filterDirty = true; ItemIcons.Clear(); Status = reason;
     }
@@ -106,6 +110,7 @@ internal static class ItemEditor
                 resultLookup = Results.ToDictionary(entry => entry.Key, StringComparer.Ordinal);
                 appliedSearch = search; appliedFilter = filter; appliedOwned = ownedOnly; filterDirty = false;
             }
+            UpdateDisplayPolicy();
         }
         if (pending != null) Execute();
         ItemIcons.Tick(PageActive);
@@ -195,6 +200,17 @@ internal static class ItemEditor
         }
         if (ownedOnly && (Counts.Count != counts.Count || counts.Any(pair => Counts.GetValueOrDefault(pair.Key, -1) != pair.Value))) filterDirty = true;
         Counts = counts; Equipment = owned; stacks = stackPointers;
+        equipmentIndices = owned.ToDictionary(pair => pair.Key, pair => new ItemEquipmentIndex(pair.Value.Select(item => item.Identity)), StringComparer.Ordinal);
+        snapshotVersion++;
+    }
+    private static void UpdateDisplayPolicy()
+    {
+        var key = DisplayPolicy.TargetKey;
+        var valid = templates.TryGetValue(key, out var template);
+        var entry = valid ? template!.Entry : default;
+        var count = Counts.GetValueOrDefault(key);
+        DisplayPolicy.Update(new ItemEditRequest(entry, ItemEditOperation.Add, 1, count,
+            valid && Valid(template!), count >= 0), equipmentIndices.GetValueOrDefault(key), snapshotVersion);
     }
     private static string InstanceKey(IntPtr pointer) => epoch + ":" + pointer.ToInt64().ToString("X");
     private static ItemEditRequest Policy(Template template, Pending request) => new(template.Entry, request.Operation, request.Quantity,

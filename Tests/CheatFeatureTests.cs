@@ -198,12 +198,14 @@ internal static class CheatFeatureTests
 
         Test("batch edits treat null and equal text consistently", () =>
         {
+#pragma warning disable CS8631 // This case deliberately exercises null text against the existing generic equality API.
             var changed = CheatBatch.Changed(new[]
             {
                 ("a", (string?)null, "当前"),
                 ("b", "相同", "相同"),
                 ("c", "新值", (string?)null)
             });
+#pragma warning restore CS8631
             Require(changed.Count == 2);
             Require(changed[0].Key == "a" && changed[0].Value is null);
             Require(changed[1].Key == "c" && changed[1].Value == "新值");

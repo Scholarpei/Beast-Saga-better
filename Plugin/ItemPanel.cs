@@ -10,13 +10,13 @@ public sealed partial class RuntimeDriver
     private int itemCategory;
     private bool itemOwned;
     private long itemEpoch = -1;
-    private readonly HashSet<string> itemInstances = new(StringComparer.Ordinal);
     private static readonly string[] itemCategories = { "全部", "装备", "道具", "材料", "秘籍", "任务", "战斗", "图纸", "灵化道具", "山海录" };
     internal void SetItemFixture(string search, int category, bool owned, string key, float scrollY, string quantity)
     {
         if (!Plugin.TestMode) throw new InvalidOperationException("Only TestMode supports UI fixtures");
         itemEpoch = ItemEditor.Epoch; itemSearch = search; itemCategory = category == -1 ? 1 : category == 0 ? 0 : category + 1;
-        itemOwned = owned; selectedItem = key; itemScroll = new Vector2(0, scrollY); itemQuantity = quantity; itemInstances.Clear();
+        itemOwned = owned; selectedItem = key; itemScroll = new Vector2(0, scrollY); itemQuantity = quantity;
+        ItemEditor.DisplayPolicy.SetDraft(key, quantity); ItemEditor.DisplayPolicy.ClearSelection();
         ItemEditor.Query(search, category, owned);
     }
     internal void DrawItemsPage(Rect bounds)
@@ -29,7 +29,7 @@ public sealed partial class RuntimeDriver
     private void DrawItemsPageCore(Rect bounds)
     {
         GUI.enabled = true;
-        if (itemEpoch != ItemEditor.Epoch) { itemEpoch = ItemEditor.Epoch; itemInstances.Clear(); selectedItem = ""; }
+        if (itemEpoch != ItemEditor.Epoch) { itemEpoch = ItemEditor.Epoch; ItemEditor.DisplayPolicy.ClearSelection(); selectedItem = ""; }
         GUI.Label(new Rect(bounds.x, bounds.y, 64, 26), "物品", cheatPageTitleStyle);
         var text = GUI.TextField(new Rect(bounds.x + 65, bounds.y, Math.Max(100, bounds.width - 280), 26), itemSearch, cheatInputStyle);
         if (text != itemSearch) { itemSearch = text; itemScroll = Vector2.zero; }
@@ -50,7 +50,7 @@ public sealed partial class RuntimeDriver
         {
             var entry = rows[index]; var y = index * rowHeight; visible.Add(entry.Key);
             if (GUI.Button(new Rect(0, y, list.width - 16, rowHeight - 3), "", selectedItem == entry.Key ? cheatPickerItemActiveStyle : cheatPickerItemStyle))
-            { selectedItem = entry.Key; itemInstances.Clear(); itemDescriptionScroll = Vector2.zero; instanceScroll = Vector2.zero; }
+            { selectedItem = entry.Key; ItemEditor.DisplayPolicy.SetDraft(selectedItem, itemQuantity); ItemEditor.DisplayPolicy.ClearSelection(); itemDescriptionScroll = Vector2.zero; instanceScroll = Vector2.zero; }
             var iconNote = ItemIcons.Draw(new Rect(4, y + 4, 42, 42), entry.Key);
             if (iconNote.Length > 0) GUI.Label(new Rect(4, y + 14, 42, 25), "◻", cheatHintStyle);
             GUI.Label(new Rect(52, y + 5, list.width - 70, 22), entry.Name + "  品质" + entry.Rank, cheatValueStyle);
@@ -73,16 +73,16 @@ public sealed partial class RuntimeDriver
             GUI.EndScrollView();
             GUI.Label(new Rect(0, 149, detail.width, 19), selected.Key, cheatTinyStyle);
             itemQuantity = GUI.TextField(new Rect(0, 176, 60, 27), itemQuantity, cheatCenterInputStyle);
-            var quantityValid = long.TryParse(itemQuantity, NumberStyles.Integer, CultureInfo.InvariantCulture, out var quantity);
+            long.TryParse(itemQuantity, NumberStyles.Integer, CultureInfo.InvariantCulture, out var quantity);
             var instances = ItemEditor.Equipment.GetValueOrDefault(selected.Key) ?? Array.Empty<OwnedEquipment>();
-            var request = new ItemEditRequest(selected, ItemEditOperation.Add, quantityValid ? quantity : 0, ItemEditor.Counts.GetValueOrDefault(selected.Key), true, true);
-            var reason = ItemEditor.Block ?? ItemEditPolicy.BlockReason(request);
+            var policy = ItemEditor.DisplayPolicy;
+            policy.SetDraft(selected.Key, itemQuantity);
+            var reason = ItemEditor.Block ?? policy.AddReason;
             GUI.enabled = reason == null && !ItemEditor.IsBusy;
             if (GUI.Button(new Rect(68, 176, 70, 27), "添加", cheatPrimaryButtonStyle)) ItemEditor.Request(selected.Key, ItemEditOperation.Add, quantity);
-            var remove = request with { Operation = ItemEditOperation.Remove, SelectedInstanceKeys = itemInstances.ToArray(), EquipmentInstances = instances.Select(item => item.Identity).ToArray() };
-            var removeReason = ItemEditor.Block ?? ItemEditPolicy.BlockReason(remove);
+            var removeReason = ItemEditor.Block ?? policy.RemoveReason;
             GUI.enabled = removeReason == null && !ItemEditor.IsBusy;
-            if (GUI.Button(new Rect(146, 176, 70, 27), "移除", cheatButtonStyle)) ItemEditor.Request(selected.Key, ItemEditOperation.Remove, quantity, itemInstances);
+            if (GUI.Button(new Rect(146, 176, 70, 27), "移除", cheatButtonStyle)) ItemEditor.Request(selected.Key, ItemEditOperation.Remove, quantity, policy.SelectedKeys);
             GUI.enabled = true;
             GUI.Label(new Rect(0, 207, detail.width, 36), removeReason ?? reason ?? "可提交；实际状态将在 Update 再次验证", cheatNoticeTextStyle);
             if (selected.IsEquipment && detail.height > 270)
@@ -95,9 +95,9 @@ public sealed partial class RuntimeDriver
                 {
                     var instance = instances[index]; var identity = instance.Identity;
                     GUI.enabled = identity.IsWorn == false && identity.IsLocked == false;
-                    var wasSelected = itemInstances.Contains(identity.Key);
+                    var wasSelected = policy.IsSelected(identity.Key);
                     var chosen = GUI.Toggle(new Rect(0, index * 64, detail.width - 20, 22), wasSelected, identity.Key + (identity.IsWorn == true ? " 已穿戴" : identity.IsWorn == null ? " 穿戴状态未知" : " 背包") + (identity.IsLocked == true ? " 锁定熔解" : ""));
-                    if (chosen) itemInstances.Add(identity.Key); else itemInstances.Remove(identity.Key);
+                    policy.SetSelected(identity.Key, chosen);
                     GUI.enabled = true;
                     GUI.Label(new Rect(18, index * 64 + 23, detail.width - 35, 37), instance.Detail, cheatNoticeTextStyle);
                 }

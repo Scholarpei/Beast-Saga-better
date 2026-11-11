@@ -297,6 +297,82 @@ internal static class ItemFeatureTests
             Require(!ItemSubmission.TryExecute(session, () => "g", _ => true, () => { session.Reset(); return true; }, () => writes++));
             Require(writes == 0);
         });
+        Test("uncertain native icon return remains charged and is never retried", () =>
+        {
+            var budget = new ItemIconBudget(1, 2);
+            budget.SetVisible(new[] { "old" }); budget.BeginFrame();
+            Require(budget.TryStart("old", 0, out var ticket));
+            budget.Complete(ticket); budget.SetVisible(new[] { "new" });
+            var attempts = 0;
+            try { budget.TryReturn(ticket, () => { attempts++; throw new IOException("native release uncertain"); }); }
+            catch (IOException) { }
+            Require(budget.Count == 1 && budget.QuarantinedCount == 1);
+            Require(!budget.TryReturn(ticket, () => attempts++));
+            Require(budget.ReleaseCompleted().Count == 0 && attempts == 1);
+            budget.BeginFrame(); Require(!budget.TryStart("new", 0, out _));
+        });
+        Test("late native completion drains after owner destruction on independent main-thread heartbeat", () =>
+        {
+            foreach (var success in new[] { true, false })
+            {
+                var budget = new ItemIconBudget(1, 2);
+                var pump = new ItemIconCompletionPump(budget, mainThreadId: 7);
+                budget.SetVisible(new[] { "pending" }); budget.BeginFrame();
+                Require(budget.TryStart("pending", 0, out var ticket));
+                budget.SetVisible(Array.Empty<string>()); // Owning RuntimeDriver destroyed; it never ticks again.
+                var returns = 0; var observed = false; var observations = 0;
+                pump.Drain(7, _ => returns++, (_, _) => throw new Exception("Unexpected release failure"));
+                Require(returns == 0 && budget.Count == 1);
+                pump.Observe(ticket, () => { observed = success; observations++; });
+                pump.Drain(99, _ => returns++, (_, _) => throw new Exception("Unexpected release failure"));
+                Require(returns == 0 && budget.Count == 1); // Off-main cannot touch native ownership.
+                pump.Drain(7, _ => returns++, (_, _) => throw new Exception("Unexpected release failure"));
+                Require(returns == 1 && budget.Count == 0 && observed == success && observations == 1);
+                pump.Observe(ticket);
+                pump.Drain(7, _ => returns++, (_, _) => throw new Exception("Unexpected release failure"));
+                Require(returns == 1);
+            }
+        });
+        Test("large equipment display cache does not enumerate or allocate on unchanged draw reads", () =>
+        {
+            var enumerated = 0;
+            IEnumerable<CheatEquipmentInstance> Inventory()
+            {
+                for (var index = 0; index < 20000; index++)
+                {
+                    enumerated++;
+                    yield return new CheatEquipmentInstance("instance:" + index, equipment.Key, false, index == 0);
+                }
+            }
+            var index = new ItemEquipmentIndex(Inventory());
+            var cache = new ItemDisplayPolicyCache();
+            cache.SetDraft(equipment.Key, "1"); cache.SetSelected("instance:19999", true);
+            var displayRequest = Request(equipment, owned: 20000);
+            cache.Update(displayRequest, index, snapshotVersion: 1);
+            Require(cache.Ready && cache.AddReason == null && cache.RemoveReason == null);
+            cache.Update(displayRequest, index, snapshotVersion: 1); // Warm generic equality/JIT before measuring steady reads.
+            var allocated = GC.GetAllocatedBytesForCurrentThread();
+            for (var draw = 0; draw < 1000; draw++)
+            {
+                cache.Update(displayRequest, index, snapshotVersion: 1);
+                Require(cache.Ready && cache.RemoveReason == null && cache.IsSelected("instance:19999"));
+            }
+            Require(GC.GetAllocatedBytesForCurrentThread() == allocated && enumerated == 20000);
+            cache.SetSelected("instance:19999", false); cache.SetSelected("instance:0", true);
+            Require(!cache.Ready);
+            cache.Update(Request(equipment, owned: 20000), index, snapshotVersion: 1);
+            Require(cache.Ready && cache.RemoveReason != null && enumerated == 20000);
+            cache.SetDraft(equipment.Key, "0");
+            cache.Update(Request(equipment, owned: 20000), index, snapshotVersion: 1);
+            Require(cache.AddReason != null && cache.RemoveReason != null);
+            cache.SetDraft(equipment.Key, "1");
+            var unlocked = new ItemEquipmentIndex(new[] { new CheatEquipmentInstance("instance:0", equipment.Key, false, false) });
+            cache.Update(displayRequest, unlocked, snapshotVersion: 2);
+            Require(cache.RemoveReason == null); // New snapshot invalidates the formerly locked result.
+            var ambiguous = new ItemEquipmentIndex(new[] { first with { Key = "instance:0" }, first with { Key = "instance:0" } });
+            cache.Update(displayRequest, ambiguous, snapshotVersion: 3);
+            Require(cache.RemoveReason != null);
+        });
         return (checks, failures);
     }
 }

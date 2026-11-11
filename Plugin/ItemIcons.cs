@@ -14,6 +14,7 @@ internal static class ItemIcons
         internal ItemIconTicket Ticket;
         internal MyGLoader Loader = null!;
         internal bool Complete, Failed;
+        internal bool Quarantined;
         internal Texture? Texture;
         internal Rect Uv;
         internal float Aspect = 1;
@@ -22,7 +23,8 @@ internal static class ItemIcons
     }
     private static readonly ItemIconBudget budget = new();
     private static readonly Dictionary<long, Loan> loans = new();
-    private static readonly Dictionary<IntPtr, Loan> registry = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<IntPtr, Loan> registry = new();
+    private static ItemIconCompletionPump? completionPump;
     private static string[] visible = Array.Empty<string>();
     internal static string[]? TestVisible;
     private static bool enabled;
@@ -31,34 +33,42 @@ internal static class ItemIcons
     private static int lastStarts, maxStarts;
     private static double maxRequestMs;
     private static readonly Queue<double> recentTicks = new();
-    internal static object Metrics => new { enabled, observerStatus, held = budget.Count, pending = loans.Values.Count(loan => !loan.Complete), ready = loans.Values.Count(loan => loan.Complete), acquired, released, successes, failures, maxRequestMs, lastStarts, maxStarts,
+    internal static object Metrics => new { enabled, observerStatus, held = budget.Count, quarantined = budget.QuarantinedCount, pending = loans.Values.Count(loan => !loan.Complete), ready = loans.Values.Count(loan => loan.Complete && !loan.Quarantined), acquired, released, successes, failures, maxRequestMs, lastStarts, maxStarts,
         scope = "ItemIcons.Tick active frames only; excludes panel drawing and other plugin work", samples = recentTicks.Count,
         p95TickMs = recentTicks.Count == 0 ? 0 : recentTicks.OrderBy(value => value).ElementAt((int)((recentTicks.Count - 1) * .95)),
-        icons = loans.Values.Select(loan => new { loan.Ticket.Key, loan.Ticket.Id, loan.Url, loan.Complete, loan.Failed, loan.Note, pointer = loan.Loader.Pointer.ToInt64().ToString("X"), bindable = budget.CanBind(loan.Ticket),
-            texture = loan.Complete && !loan.Failed && loan.Loader.texture != null ? new { pointer = loan.Loader.texture.Pointer.ToInt64().ToString("X"), loan.Loader.texture.refCount, loan.Loader.texture.rotated, loan.Loader.texture.width, loan.Loader.texture.height,
+        icons = loans.Values.Select(loan => new { loan.Ticket.Key, loan.Ticket.Id, loan.Url, loan.Complete, loan.Failed, loan.Quarantined, loan.Note, pointer = loan.Loader.Pointer.ToInt64().ToString("X"), bindable = budget.CanBind(loan.Ticket),
+            texture = loan.Complete && !loan.Failed && !loan.Quarantined && loan.Loader.texture != null ? new { pointer = loan.Loader.texture.Pointer.ToInt64().ToString("X"), loan.Loader.texture.refCount, loan.Loader.texture.rotated, loan.Loader.texture.width, loan.Loader.texture.height,
                 alpha = loan.Loader.texture.alphaTexture != null, uv = loan.Loader.texture.uvRect.ToString(), offset = loan.Loader.texture.offset.ToString(), originalSize = loan.Loader.texture.originalSize.ToString() } : null }).ToArray() };
     internal static void Initialize(Harmony harmony)
     {
         try
         {
+            completionPump = new ItemIconCompletionPump(budget, Environment.CurrentManagedThreadId);
             var success = AccessTools.Method(typeof(MyGLoader), "OnLoadSuccess", new[] { typeof(NTexture) });
             var fail = AccessTools.Method(typeof(MyGLoader), "OnLoadFail", new[] { typeof(string) });
-            if (success == null || fail == null) throw new MissingMethodException("MyGLoader completion callbacks");
+            var heartbeat = AccessTools.Method(typeof(StageEngine), "LateUpdate", Type.EmptyTypes);
+            if (success == null || fail == null || heartbeat == null) throw new MissingMethodException("MyGLoader callbacks / native StageEngine.LateUpdate");
             harmony.Patch(success, postfix: new HarmonyMethod(typeof(ItemIcons), nameof(Success)));
             harmony.Patch(fail, postfix: new HarmonyMethod(typeof(ItemIcons), nameof(Fail)));
-            if (Harmony.GetPatchInfo(success)?.Owners.Contains(harmony.Id) != true || Harmony.GetPatchInfo(fail)?.Owners.Contains(harmony.Id) != true) throw new InvalidOperationException("callback patch verification");
-            enabled = true; observerStatus = "两个原生完成回调已挂钩";
+            harmony.Patch(heartbeat, postfix: new HarmonyMethod(typeof(ItemIcons), nameof(NativeHeartbeat)));
+            if (Harmony.GetPatchInfo(success)?.Owners.Contains(harmony.Id) != true || Harmony.GetPatchInfo(fail)?.Owners.Contains(harmony.Id) != true || Harmony.GetPatchInfo(heartbeat)?.Owners.Contains(harmony.Id) != true) throw new InvalidOperationException("callback / native drain patch verification");
+            enabled = true; observerStatus = "两个完成回调与独立原生主线程清理已挂钩";
         }
         catch (Exception error) { enabled = false; observerStatus = error.Message; Plugin.Logger.LogWarning("图标借用停用：" + error); }
     }
     private static void Success(MyGLoader __instance) => Observe(__instance, false);
     private static void Fail(MyGLoader __instance) => Observe(__instance, true);
+    // FairyGUI's game-owned engine survives RuntimeDriver destruction. Its main-thread
+    // heartbeat remains patched while any registered late callback can still complete.
+    private static void NativeHeartbeat() => Release();
     private static void Observe(MyGLoader loader, bool failed)
     {
         if (!registry.TryGetValue(loader.Pointer, out var loan) || loan.Complete) return;
-        loan.Complete = true; loan.Failed = failed;
-        budget.Complete(loan.Ticket);
-        if (failed) { failures++; loan.Note = "图片暂不可用"; } else successes++;
+        completionPump?.Observe(loan.Ticket, () =>
+        {
+            loan.Complete = true; loan.Failed = failed;
+            if (failed) { failures++; loan.Note = "图片暂不可用"; } else successes++;
+        });
     }
     internal static void RequestVisible(IEnumerable<string> keys)
     {
@@ -71,13 +81,24 @@ internal static class ItemIcons
     }
     private static void Release()
     {
-        foreach (var ticket in budget.ReleaseCompleted())
+        completionPump?.Drain(Environment.CurrentManagedThreadId, ticket =>
         {
-            if (!loans.Remove(ticket.Id, out var loan)) continue;
-            registry.Remove(loan.Loader.Pointer);
-            try { loan.Loader.Dispose(); released++; }
-            catch (Exception error) { Plugin.Logger.LogWarning("图标借用归还异常：" + error); }
-        }
+            // Only constructor failure has a budget ticket without a native loader/URL.
+            if (!loans.TryGetValue(ticket.Id, out var loan)) return;
+            var pointer = loan.Loader.Pointer;
+            loan.Loader.Dispose();
+            registry.TryRemove(pointer, out _);
+            loans.Remove(ticket.Id);
+            released++;
+        }, (ticket, error) =>
+        {
+            if (loans.TryGetValue(ticket.Id, out var loan))
+            {
+                loan.Quarantined = true; loan.Texture = null;
+                loan.Note = "归还状态不明，已隔离且计入容量；本次运行不重试";
+            }
+            Plugin.Logger.LogWarning("图标借用归还异常，保留隔离所有权：" + error);
+        });
     }
     internal static void Tick(bool active)
     {
@@ -117,7 +138,7 @@ internal static class ItemIcons
                     budget.Complete(ticket); budget.SetVisible(Array.Empty<string>()); Release();
                     Plugin.Logger.LogWarning("图标构造失败：" + error); break;
                 }
-                loans.Add(ticket.Id, loan); registry.Add(loan.Loader.Pointer, loan); acquired++;
+                loans.Add(ticket.Id, loan); registry.TryAdd(loan.Loader.Pointer, loan); acquired++;
                 var requestWatch = Stopwatch.StartNew();
                 try
                 {
