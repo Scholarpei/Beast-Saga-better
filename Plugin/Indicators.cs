@@ -300,13 +300,135 @@ internal static class Indicators
     private static bool VariableConditionIsTrue(string expression)
     {
         var spec = CheckPreview.ParseVariableEquality(expression);
-        if (spec == null) return false;
-        var result = DialogueLua.GetVariable(spec.Variable);
-        if (!result.HasReturnValue) return false;
-        if (spec.Expected is bool expectedBool) return result.IsBool && result.AsBool == expectedBool;
-        if (spec.Expected is double expectedNumber)
-            return result.IsNumber && float.IsFinite(result.AsFloat) && Math.Abs(result.AsFloat - expectedNumber) < 0.000001;
-        return result.IsString && result.AsString == (string)spec.Expected;
+        if (spec != null) return VariableEquals(spec) == true;
+
+        var alternatives = SplitTopLevel(expression, "or");
+        if (alternatives.Count < 2) return false;
+        var values = new Dictionary<string, VariableValue>(StringComparer.Ordinal);
+        foreach (var alternative in alternatives)
+        {
+            var equality = CheckPreview.ParseVariableEquality(StripOuterParentheses(alternative.Trim()));
+            if (equality == null) continue;
+            if (VariableEquals(equality, values) == true) return true;
+        }
+        return false;
+    }
+
+    private static bool? VariableEquals(VariableEqualitySpec spec, Dictionary<string, VariableValue>? values = null)
+    {
+        if (values == null || !values.TryGetValue(spec.Variable, out var value))
+        {
+            value = ReadVariable(spec.Variable);
+            if (values != null) values[spec.Variable] = value;
+        }
+        if (!value.HasValue) return null;
+        return spec.Expected switch
+        {
+            bool expected => value.IsBool ? value.BoolValue == expected : false,
+            double expected => value.IsNumber && double.IsFinite(value.NumberValue) && Math.Abs(value.NumberValue - expected) < 0.000001,
+            string expected => value.IsString && value.StringValue == expected,
+            _ => null
+        };
+    }
+
+    private static VariableValue ReadVariable(string name)
+    {
+        var result = DialogueLua.GetVariable(name);
+        if (!result.HasReturnValue) return default;
+        var isBool = result.IsBool;
+        var isNumber = result.IsNumber;
+        var isString = result.IsString;
+        return new(true, isBool, isBool && result.AsBool, isNumber, isNumber ? result.AsFloat : 0, isString, isString ? result.AsString : "");
+    }
+
+    private readonly record struct VariableValue(bool HasValue, bool IsBool, bool BoolValue, bool IsNumber, double NumberValue, bool IsString, string StringValue);
+
+    private static List<string> SplitTopLevel(string expression, string keyword)
+    {
+        var parts = new List<string>();
+        var start = 0;
+        var depth = 0;
+        var quote = '\0';
+        for (var index = 0; index < expression.Length; index++)
+        {
+            var character = expression[index];
+            if (quote != '\0')
+            {
+                if (character == '\\')
+                {
+                    index++;
+                    continue;
+                }
+                if (character == quote) quote = '\0';
+                continue;
+            }
+            if (character is '\'' or '"')
+            {
+                quote = character;
+                continue;
+            }
+            if (character is '(' or '[')
+            {
+                depth++;
+                continue;
+            }
+            if (character is ')' or ']')
+            {
+                depth--;
+                continue;
+            }
+            if (depth != 0 || index + keyword.Length > expression.Length) continue;
+            if (!expression.Substring(index, keyword.Length).Equals(keyword, StringComparison.OrdinalIgnoreCase)) continue;
+            if (index > 0 && IsIdentifierCharacter(expression[index - 1])) continue;
+            var end = index + keyword.Length;
+            if (end < expression.Length && IsIdentifierCharacter(expression[end])) continue;
+            parts.Add(expression[start..index]);
+            start = end;
+            index = end - 1;
+        }
+        if (parts.Count == 0) return new List<string> { expression };
+        parts.Add(expression[start..]);
+        return parts;
+    }
+
+    private static bool IsIdentifierCharacter(char character) => char.IsLetterOrDigit(character) || character == '_';
+
+    private static string StripOuterParentheses(string expression)
+    {
+        while (expression.Length > 1 && expression[0] == '(' && expression[^1] == ')')
+        {
+            var depth = 0;
+            var quote = '\0';
+            var wrapsWholeExpression = true;
+            for (var index = 0; index < expression.Length; index++)
+            {
+                var character = expression[index];
+                if (quote != '\0')
+                {
+                    if (character == '\\')
+                    {
+                        index++;
+                        continue;
+                    }
+                    if (character == quote) quote = '\0';
+                    continue;
+                }
+                if (character is '\'' or '"')
+                {
+                    quote = character;
+                    continue;
+                }
+                if (character == '(') depth++;
+                else if (character == ')' && --depth == 0 && index != expression.Length - 1)
+                {
+                    wrapsWholeExpression = false;
+                    break;
+                }
+            }
+            if (!wrapsWholeExpression || depth != 0) break;
+            expression = expression[1..^1].Trim();
+        }
+        return expression;
     }
 
     private static System.Collections.Generic.IEnumerable<Link> EnumerateLinks(

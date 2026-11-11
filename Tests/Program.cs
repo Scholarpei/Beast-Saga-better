@@ -155,6 +155,55 @@ try
         var hint = Indicators.Hint(option);
         Require(hint.Contains("后续条件未知") && !hint.Contains("active"), hint);
     });
+    Test("mutually exclusive variable states continue through the only visible option", () =>
+    {
+        DialogueVariableState.Reset();
+        DialogueVariableState.Variables["密室的状态"] = "1";
+        var option = new DialogueEntry { id = 2748 };
+        var question = new DialogueEntry { id = 2749 };
+        var deadA = new DialogueEntry
+        {
+            id = 2750,
+            conditionsString = "(Variable[\"密室的状态\"] == 2) or (Variable[\"密室的状态\"] == 0)"
+        };
+        var deadB = new DialogueEntry
+        {
+            id = 2751,
+            conditionsString = "Variable[\"密室的状态\"] == 3"
+        };
+        var alive = new DialogueEntry
+        {
+            id = 2752,
+            conditionsString = "Variable[\"密室的状态\"] == 1 or (Variable[\"密室的状态\"] == 4)"
+        };
+        var reply = new DialogueEntry { id = 2754 };
+        var reward = new DialogueEntry { id = 2755, userScript = "AwardItem(\"铜钱\", 500)" };
+        option.outgoingLinks.Add(new Link(question));
+        question.outgoingLinks.Add(new Link(deadA));
+        question.outgoingLinks.Add(new Link(deadB));
+        question.outgoingLinks.Add(new Link(alive));
+        alive.outgoingLinks.Add(new Link(reply));
+        reply.outgoingLinks.Add(new Link(reward));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("获得：铜钱 ×500"), hint);
+        Require(!hint.Contains("后续有分支条件未知"), hint);
+        Require(!hint.Contains("他活了下来") && !hint.Contains("他为保护村庄"), hint);
+    });
+    Test("unknown disjunction still stops before conditional rewards", () =>
+    {
+        DialogueVariableState.Reset();
+        var option = new DialogueEntry { id = 2748 };
+        var gate = new DialogueEntry
+        {
+            id = 2752,
+            conditionsString = "(Variable[\"密室的状态\"] == 1) or (Variable[\"密室的状态\"] == 4)"
+        };
+        var reward = new DialogueEntry { id = 2755, userScript = "AwardItem('宝物',1)" };
+        option.outgoingLinks.Add(new Link(gate));
+        gate.outgoingLinks.Add(new Link(reward));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("后续条件未知") && !hint.Contains("宝物"), hint);
+    });
     Test("cycles terminate and never multiply the same reward", () =>
     {
         var entry = new DialogueEntry { userScript = "AwardItem('铜钱',1)" };
