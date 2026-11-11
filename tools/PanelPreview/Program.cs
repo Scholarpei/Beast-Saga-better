@@ -1,9 +1,9 @@
 using System.Text.Json;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 
 var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
 var serviceArgs = args.Where(arg => !arg.StartsWith("--urls", StringComparison.OrdinalIgnoreCase)).ToArray();
-var checkpointRoot = Path.GetFullPath(serviceArgs.Length > 0 ? serviceArgs[0] : Path.Combine(projectRoot, "sandbox/Game/SafeDialogueToolsData/checkpoints"));
+var checkpointRoot = Path.GetFullPath(serviceArgs.Length > 0 ? serviceArgs[0] : Path.Combine(projectRoot, "sandbox/Game/BeastSagaBetterData/checkpoints"));
 if (!checkpointRoot.StartsWith(projectRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
 {
     Console.Error.WriteLine($"Checkpoint root must stay inside the project: {checkpointRoot}");

@@ -1,6 +1,6 @@
-using SafeDialogueTools.Core;
-using SafeDialogueTools;
-using SafeDialogueTools.Tests;
+using BeastSagaBetter.Core;
+using BeastSagaBetter;
+using BeastSagaBetter.Tests;
 using PixelCrushers.DialogueSystem;
 
 var failures = 0;
@@ -20,7 +20,7 @@ void Reject(Action action)
     try { action(); } catch (IOException) { return; } catch (InvalidDataException) { return; }
     throw new Exception("Unsafe operation was accepted");
 }
-var root = Path.Combine(Path.GetTempPath(), "SafeDialogueTools-tests-" + Guid.NewGuid().ToString("N"));
+var root = Path.Combine(Path.GetTempPath(), "BeastSagaBetter-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
 {

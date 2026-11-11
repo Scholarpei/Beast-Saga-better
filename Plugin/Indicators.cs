@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
 using HarmonyLib;
 using PixelCrushers.DialogueSystem;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal static class Indicators
 {

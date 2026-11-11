@@ -1,8 +1,8 @@
 using HarmonyLib;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 using UnityEngine;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal static class PanelKeyGate
 {

@@ -1,9 +1,9 @@
 using System.Text.Json;
 using PixelCrushers.DialogueSystem;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 using UnityEngine;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal static class TestBridge
 {
@@ -570,7 +570,7 @@ internal static class TestBridge
     private static void PreviewTests(bool staleParty)
     {
         var party = PlayerFriendDataManager._Instance._FriendData.BattleFriend;
-        var sentinel = "SafeDialogueToolsMissingFriend_" + Guid.NewGuid().ToString("N");
+        var sentinel = "BeastSagaBetterMissingFriend_" + Guid.NewGuid().ToString("N");
         if (staleParty) party.Add(sentinel);
         try
         {

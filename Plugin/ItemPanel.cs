@@ -1,7 +1,7 @@
 using System.Globalization;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 using UnityEngine;
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 public sealed partial class RuntimeDriver
 {

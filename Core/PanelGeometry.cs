@@ -1,4 +1,4 @@
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public readonly record struct PanelRect(float X, float Y, float Width, float Height)
 {

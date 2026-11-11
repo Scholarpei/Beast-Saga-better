@@ -7,7 +7,7 @@
     <DefineConstants>$(DefineConstants);SAFE_DIALOGUE_TOOLS_TESTS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Core/SafeDialogueTools.Core.csproj" />
+    <ProjectReference Include="../Core/BeastSagaBetter.Core.csproj" />
     <Compile Include="../Plugin/Indicators.cs" Link="Plugin/Indicators.cs" />
     <Compile Include="../Plugin/FuturePreviewPresentation.cs" Link="Plugin/FuturePreviewPresentation.cs" />
   </ItemGroup>

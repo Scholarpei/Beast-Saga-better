@@ -1,7 +1,7 @@
 using ExcelData;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal sealed record CheatCharacterOption(string Key, string Name, CheatCharacterKind Kind, FriendData? Friend)
 {

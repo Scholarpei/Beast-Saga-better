@@ -50,7 +50,7 @@ if ($UseReadOnlySeed) {
     Write-Output 'Seed copied under a read lock; this is not a full save backup.'
 }
 Set-Content -LiteralPath "$sandboxRoot/SAFE_DIALOGUE_TEST_COPY" -Value 'Isolated test saves; suppress Unity PlayerPrefs writes' -Encoding ascii
-New-Item -ItemType Directory -Path "$sandboxRoot/BepInEx/plugins/SafeDialogueTools" -Force | Out-Null
-Copy-Item -LiteralPath "$projectRoot/Plugin/bin/Release/net6.0/SafeDialogueTools.dll" -Destination "$sandboxRoot/BepInEx/plugins/SafeDialogueTools/SafeDialogueTools.dll"
+New-Item -ItemType Directory -Path "$sandboxRoot/BepInEx/plugins/BeastSagaBetter" -Force | Out-Null
+Copy-Item -LiteralPath "$projectRoot/Plugin/bin/Release/net6.0/BeastSagaBetter.dll" -Destination "$sandboxRoot/BepInEx/plugins/BeastSagaBetter/BeastSagaBetter.dll"
 Write-Output "BACKUP=$backupRoot"
 Write-Output "SANDBOX=$sandboxRoot"

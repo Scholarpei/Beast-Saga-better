@@ -1,8 +1,8 @@
 using HarmonyLib;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 using UnityEngine;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 [HarmonyPatch(typeof(Input), nameof(Input.GetMouseButton))]
 internal static class PanelMouseButtonGate

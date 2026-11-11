@@ -1,6 +1,6 @@
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 
-namespace SafeDialogueTools.Tests;
+namespace BeastSagaBetter.Tests;
 
 internal static class PanelRegressionTests
 {

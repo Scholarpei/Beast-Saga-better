@@ -1,4 +1,4 @@
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public readonly record struct CheatItemEntry(
     string Key, string Name, string Description, int Category, int ItemType, int Rank, bool IsEquipment);

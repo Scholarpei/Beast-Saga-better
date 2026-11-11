@@ -22,7 +22,7 @@ if (Test-Path -LiteralPath $bepInExConfig) {
     }
     Set-Content -LiteralPath $bepInExConfig -Value $lines -Encoding UTF8
 }
-Copy-Item -LiteralPath "$PSScriptRoot/../Plugin/bin/Release/net6.0/SafeDialogueTools.dll" -Destination "$testRoot/BepInEx/plugins/SafeDialogueTools/SafeDialogueTools.dll"
+Copy-Item -LiteralPath "$PSScriptRoot/../Plugin/bin/Release/net6.0/BeastSagaBetter.dll" -Destination "$testRoot/BepInEx/plugins/BeastSagaBetter/BeastSagaBetter.dll"
 $arguments = if ($Graphical) { @('-screen-fullscreen', '0', '-screen-width', '1280', '-screen-height', '720') } else { @('-batchmode', '-nographics') }
 $arguments += @('-logFile', "`"$testRoot/Unity-test.log`"")
 $windowStyle = if ($Graphical) { 'Normal' } else { 'Hidden' }

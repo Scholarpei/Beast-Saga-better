@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 /// <summary>Built with the Update snapshot; duplicate native identities remain ambiguous.</summary>
 public sealed class ItemEquipmentIndex

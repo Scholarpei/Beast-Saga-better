@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <AssemblyName>SafeDialogueTools</AssemblyName>
+    <AssemblyName>BeastSagaBetter</AssemblyName>
     <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)../../</GameDir>
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>

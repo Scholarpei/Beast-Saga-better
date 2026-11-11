@@ -1,7 +1,7 @@
 using System.Text.Json;
 using UnityEngine;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal static class NativeSave
 {

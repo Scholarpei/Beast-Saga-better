@@ -1,9 +1,9 @@
 using System.Diagnostics;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal sealed record OwnedEquipment(CheatEquipmentInstance Identity, string Detail);
 internal sealed record ItemOperationResult(long Id, bool Ok, string Message, string Key, long Before, long After, string? Checkpoint);

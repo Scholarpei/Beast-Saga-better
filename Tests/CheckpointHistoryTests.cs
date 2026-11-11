@@ -1,13 +1,13 @@
 using System.Text.Json;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 
-namespace SafeDialogueTools.Tests;
+namespace BeastSagaBetter.Tests;
 
 internal static class CheckpointHistoryTests
 {
     public static (int Checks, int Failures) Run()
     {
-        var root = Path.Combine(Path.GetTempPath(), "SafeDialogueTools-history-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "BeastSagaBetter-history-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
@@ -300,7 +300,7 @@ internal static class CheckpointHistoryTests
 
             Test("load work cleanup removes only validated generation folders", () =>
             {
-                var loadWorkRoot = Path.Combine(Path.GetTempPath(), "SafeDialogueTools-loadwork-" + Guid.NewGuid().ToString("N"));
+                var loadWorkRoot = Path.Combine(Path.GetTempPath(), "BeastSagaBetter-loadwork-" + Guid.NewGuid().ToString("N"));
                 var store = new LoadWorkStore(loadWorkRoot);
                 var stale = store.Prepare();
                 var active = store.Prepare();

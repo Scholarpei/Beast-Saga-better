@@ -1,4 +1,4 @@
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal enum FuturePreviewKind
 {

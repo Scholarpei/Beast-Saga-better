@@ -2,7 +2,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 [HarmonyPatch]
 internal static class SandboxPrefs

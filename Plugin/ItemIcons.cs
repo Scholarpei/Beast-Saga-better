@@ -2,10 +2,10 @@ using System.Diagnostics;
 using System.Reflection;
 using FairyGUI;
 using HarmonyLib;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 using UnityEngine;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
 internal static class ItemIcons
 {

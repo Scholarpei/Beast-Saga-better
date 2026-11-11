@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public sealed record CheckResult(bool? Passed, string Text);
 public sealed record CheckSpec(string Function, string Attribute, string Operation, double Threshold, bool Expected);

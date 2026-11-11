@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public sealed record FutureScriptResult(IReadOnlyList<FutureScriptEffect> Effects, string? StopReason);
 

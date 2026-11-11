@@ -4,22 +4,22 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path "$PSScriptRoot/..").Path
 $gameRoot = (Resolve-Path "$projectRoot/..").Path
 $dotnet = Join-Path $projectRoot 'tools/sdk/dotnet.exe'
-$sourceDll = Join-Path $projectRoot 'Plugin/bin/Release/net6.0/SafeDialogueTools.dll'
-$pluginDir = Join-Path $gameRoot 'BepInEx/plugins/SafeDialogueTools'
-$targetDll = Join-Path $pluginDir 'SafeDialogueTools.dll'
-$distDll = Join-Path $projectRoot 'dist/SafeDialogueTools.dll'
+$sourceDll = Join-Path $projectRoot 'Plugin/bin/Release/net6.0/BeastSagaBetter.dll'
+$pluginDir = Join-Path $gameRoot 'BepInEx/plugins/BeastSagaBetter'
+$targetDll = Join-Path $pluginDir 'BeastSagaBetter.dll'
+$distDll = Join-Path $projectRoot 'dist/BeastSagaBetter.dll'
 
 if (Get-Process -Name BeastSaga -ErrorAction SilentlyContinue) {
     throw '请先退出游戏，再部署插件。'
 }
 
 if (-not $SkipTests) {
-    & $dotnet run --project "$projectRoot/Tests/SafeDialogueTools.Tests.csproj" -c Release --nologo
+    & $dotnet run --project "$projectRoot/Tests/BeastSagaBetter.Tests.csproj" -c Release --nologo
     if ($LASTEXITCODE -ne 0) { throw "测试失败，退出码 $LASTEXITCODE" }
 }
 
 if (-not $SkipBuild) {
-    & $dotnet build "$projectRoot/Plugin/SafeDialogueTools.csproj" -c Release --nologo
+    & $dotnet build "$projectRoot/Plugin/BeastSagaBetter.csproj" -c Release --nologo
     if ($LASTEXITCODE -ne 0) { throw "构建失败，退出码 $LASTEXITCODE" }
 }
 
@@ -41,8 +41,8 @@ New-Item -ItemType Directory -Path $backupDir | Out-Null
 $previousHash = $null
 if (Test-Path -LiteralPath $targetDll) {
     $previousHash = (Get-FileHash -LiteralPath $targetDll -Algorithm SHA256).Hash
-    Copy-Item -LiteralPath $targetDll -Destination (Join-Path $backupDir 'SafeDialogueTools.dll')
-    $backupHash = (Get-FileHash -LiteralPath (Join-Path $backupDir 'SafeDialogueTools.dll') -Algorithm SHA256).Hash
+    Copy-Item -LiteralPath $targetDll -Destination (Join-Path $backupDir 'BeastSagaBetter.dll')
+    $backupHash = (Get-FileHash -LiteralPath (Join-Path $backupDir 'BeastSagaBetter.dll') -Algorithm SHA256).Hash
     if ($backupHash -ne $previousHash) { throw '旧 DLL 备份校验失败。' }
 }
 

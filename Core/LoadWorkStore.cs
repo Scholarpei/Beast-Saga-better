@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public sealed class LoadWorkStore
 {

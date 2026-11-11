@@ -40,9 +40,9 @@ if ($formalProcesses.Count -gt 0) {
 }
 
 if (-not $SkipBuild) {
-    & $dotnet run --project "$projectRoot/Tests/SafeDialogueTools.Tests.csproj" -c Release --nologo
+    & $dotnet run --project "$projectRoot/Tests/BeastSagaBetter.Tests.csproj" -c Release --nologo
     if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE" }
-    & $dotnet build "$projectRoot/Plugin/SafeDialogueTools.csproj" -c Release --nologo
+    & $dotnet build "$projectRoot/Plugin/BeastSagaBetter.csproj" -c Release --nologo
     if ($LASTEXITCODE -ne 0) { throw "Plugin build failed with exit code $LASTEXITCODE" }
 }
 
@@ -60,7 +60,7 @@ $latestQuick = Get-ChildItem -LiteralPath $formalSaveRoot -File -Filter 'quick*.
 if ($null -eq $latestQuick) { throw 'No production quick save found.' }
 if ($latestQuick.Name -notmatch '^quick(?<number>[123])\.es3$') { throw "Unexpected quick save name: $($latestQuick.Name)" }
 $nativeQuickNumber = [int]$Matches['number']
-$checkpointRoot = Join-Path $formalRoot 'SafeDialogueToolsData/checkpoints'
+$checkpointRoot = Join-Path $formalRoot 'BeastSagaBetterData/checkpoints'
 $latestManual = $null
 if (Test-Path -LiteralPath $checkpointRoot) {
     foreach ($directory in @(Get-ChildItem -LiteralPath $checkpointRoot -Directory)) {
@@ -129,7 +129,7 @@ Set-Content -LiteralPath (Assert-InsideProject("$testRoot/test-expected-quick.tx
 $saveIndexes = @(Get-ChildItem -LiteralPath $saveDataRoot -File -Filter 'SaveInfo*.es3')
 if ($saveIndexes.Count -eq 0) { throw 'The isolated copy has no bootstrap save index.' }
 
-$dataRoot = Assert-InsideProject("$testRoot/SafeDialogueToolsData")
+$dataRoot = Assert-InsideProject("$testRoot/BeastSagaBetterData")
 foreach ($name in @('checkpoints', 'load-work')) {
     $path = Join-Path $dataRoot $name
     if (Test-Path -LiteralPath $path) { Move-Item -LiteralPath $path -Destination (Join-Path $archiveRoot $name) }

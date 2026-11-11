@@ -1,4 +1,4 @@
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public readonly record struct ItemIconTicket(long Id, string Key);
 

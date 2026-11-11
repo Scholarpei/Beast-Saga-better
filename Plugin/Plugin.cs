@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Diagnostics;
@@ -8,12 +8,12 @@ using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
 using PixelCrushers.DialogueSystem;
-using SafeDialogueTools.Core;
+using BeastSagaBetter.Core;
 using UnityEngine;
 
-namespace SafeDialogueTools;
+namespace BeastSagaBetter;
 
-[BepInPlugin("beastsaga.safedialoguetools", "SafeDialogueTools", "0.1.0")]
+[BepInPlugin("scholarpei.beast-saga-better", "Beast-Saga-better", "0.1.0")]
 public sealed partial class Plugin : BasePlugin
 {
     internal static Plugin Current = null!;
@@ -95,7 +95,9 @@ public sealed partial class Plugin : BasePlugin
         Current = this;
         Logger = Log;
         GameRoot = Paths.GameRootPath;
-        DataRoot = Path.Combine(GameRoot, "SafeDialogueToolsData");
+        DataRoot = Path.Combine(GameRoot, "BeastSagaBetterData");
+        var legacyDataRoot = Path.Combine(GameRoot, "SafeDialogueToolsData");
+        if (!Directory.Exists(DataRoot) && Directory.Exists(legacyDataRoot)) DataRoot = legacyDataRoot;
         TestMode = File.Exists(Path.Combine(GameRoot, "SAFE_DIALOGUE_TEST_COPY")) &&
             Path.GetFileName(GameRoot).Equals("Game", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(Path.GetFileName(Path.GetDirectoryName(GameRoot)), "sandbox", StringComparison.OrdinalIgnoreCase) &&
@@ -138,7 +140,7 @@ public sealed partial class Plugin : BasePlugin
         Store = new CheckpointStore(Path.Combine(DataRoot, "checkpoints"), Fingerprint,
             MaxManualCheckpoints.Value, MaxPreDialogueCheckpoints.Value);
         LoadWorkStore = new LoadWorkStore(Path.Combine(DataRoot, "load-work"));
-        var harmony = new Harmony("beastsaga.safedialoguetools");
+        var harmony = new Harmony("scholarpei.beast-saga-better");
         harmony.PatchAll(typeof(Plugin).Assembly);
         ItemIcons.Initialize(harmony);
         AddComponent<RuntimeDriver>();
@@ -784,7 +786,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var header = new Rect(bounds.x + outerPad, bounds.y + 12 * scale, bounds.width - outerPad * 2, 78 * scale);
         GUI.Box(header, GUIContent.none, panelCardStyle!);
         GUI.Label(new Rect(header.x + 18 * scale, header.y + 13 * scale, 320 * scale, 30 * scale),
-            "Safe Dialogue Tools", panelTitleStyle);
+            "Beast-Saga-better", panelTitleStyle);
         GUI.Label(new Rect(header.x + 18 * scale, header.y + 46 * scale, 320 * scale, 22 * scale),
             "对话安全与预测工具", panelSubtitleStyle);
         var closeWidth = 84 * scale;

@@ -1,4 +1,4 @@
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public static class CheatBatch
 {

@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public enum CheckpointKind { Manual, PreDialogue, Legacy }
 

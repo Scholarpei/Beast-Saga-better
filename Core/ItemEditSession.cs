@@ -1,4 +1,4 @@
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 // Independent from the legacy cheat session: attempting a save never constitutes protection.
 public sealed class ItemEditSession

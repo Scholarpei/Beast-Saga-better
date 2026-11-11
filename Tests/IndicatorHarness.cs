@@ -4,7 +4,7 @@
 using System.Reflection;
 using PixelCrushers.DialogueSystem;
 
-namespace SafeDialogueTools.Tests
+namespace BeastSagaBetter.Tests
 {
     internal static class IndicatorHarness
     {
@@ -140,8 +140,8 @@ namespace PixelCrushers.DialogueSystem
     {
         internal static Lua.Result GetVariable(string name)
         {
-            SafeDialogueTools.Tests.DialogueVariableState.Reads++;
-            return new Lua.Result(SafeDialogueTools.Tests.DialogueVariableState.Variables.TryGetValue(name, out var value) ? value : null);
+            BeastSagaBetter.Tests.DialogueVariableState.Reads++;
+            return new Lua.Result(BeastSagaBetter.Tests.DialogueVariableState.Variables.TryGetValue(name, out var value) ? value : null);
         }
     }
     internal sealed class Lua
@@ -159,7 +159,7 @@ namespace PixelCrushers.DialogueSystem
     }
 }
 
-namespace SafeDialogueTools
+namespace BeastSagaBetter
 {
     internal static class Plugin
     {

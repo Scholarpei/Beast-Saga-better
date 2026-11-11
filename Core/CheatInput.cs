@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 
-namespace SafeDialogueTools.Core;
+namespace BeastSagaBetter.Core;
 
 public static class CheatInput
 {
