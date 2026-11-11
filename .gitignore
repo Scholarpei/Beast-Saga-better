@@ -9,15 +9,7 @@ verification/
 tools/*
 !tools/*.ps1
 !tools/*.py
-!tools/re/
-tools/re/*
-!tools/re/*.py
-!tools/re/*.ps1
-!tools/re/README.md
-tools/re/bin/
-tools/re/il2cpp_out/
-tools/re/re.db
-tools/re/__pycache__/
+tools/re/
 !tools/PanelPreview/
 !tools/PanelPreview/**
 tools/PanelPreview/bin/
