@@ -13,6 +13,10 @@ public sealed class ItemEditSession
     public bool IsBusy { get { lock (gate) return activeToken.HasValue; } }
     public bool IsProtected { get { lock (gate) return protectedGeneration is not null; } }
     public string? ProtectedGeneration { get { lock (gate) return protectedGeneration; } }
+    public bool CanCommit(long token)
+    {
+        lock (gate) return activeToken == token && protectedGeneration != null && !checking && !protectionFailed;
+    }
 
     public bool TryBeginSubmission(out long token)
     {

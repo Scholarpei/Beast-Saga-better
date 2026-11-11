@@ -251,6 +251,52 @@ internal static class ItemFeatureTests
             Require(session.TryBeginSubmission(out token));
             Require(session.EnsureProtection(token, () => "g2", _ => true));
         });
+        Test("icon generations retain pending loans until observed and reject stale binding", () =>
+        {
+            var queue = new ItemIconBudget(2, 2);
+            queue.SetVisible(new[] { "a" });
+            queue.BeginFrame();
+            Require(queue.TryStart("a", 0, out var old));
+            queue.SetVisible(new[] { "b" });
+            Require(!queue.CanBind(old));
+            Require(queue.ReleaseCompleted().Count == 0);
+            Require(queue.Complete(old));
+            Require(queue.ReleaseCompleted().SequenceEqual(new[] { old }));
+            Require(!queue.CanBind(old));
+        });
+        Test("icon capacity includes pending and per-frame count and elapsed budgets", () =>
+        {
+            var queue = new ItemIconBudget(3, 2);
+            queue.SetVisible(new[] { "a", "b", "c", "d" });
+            queue.BeginFrame();
+            Require(queue.TryStart("a", 0, out _));
+            Require(!queue.TryStart("b", 2, out _));
+            Require(queue.TryStart("b", 1, out _));
+            Require(!queue.TryStart("c", 1, out _));
+            queue.BeginFrame();
+            Require(queue.TryStart("c", 0, out _));
+            Require(!queue.TryStart("d", 0, out _));
+            queue.SetVisible(Array.Empty<string>());
+            Require(queue.ReleaseCompleted().Count == 0 && queue.Count == 3);
+        });
+        Test("failed item checkpoint never executes commit callback", () =>
+        {
+            var session = new ItemEditSession();
+            var writes = 0;
+            Require(!ItemSubmission.TryExecute(session, () => null, _ => true, () => true, () => writes++));
+            Require(writes == 0 && !session.IsBusy);
+            Require(!ItemSubmission.TryExecute(session, () => "g", _ => true, () => false, () => writes++));
+            Require(writes == 0 && !session.IsBusy);
+            Require(ItemSubmission.TryExecute(session, () => "g", _ => true, () => true, () => writes++));
+            Require(writes == 1);
+        });
+        Test("reset during final revalidation rejects commit even if callback returns true", () =>
+        {
+            var session = new ItemEditSession();
+            var writes = 0;
+            Require(!ItemSubmission.TryExecute(session, () => "g", _ => true, () => { session.Reset(); return true; }, () => writes++));
+            Require(writes == 0);
+        });
         return (checks, failures);
     }
 }

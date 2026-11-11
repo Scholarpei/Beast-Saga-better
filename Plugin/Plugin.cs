@@ -105,7 +105,9 @@ public sealed partial class Plugin : BasePlugin
         Store = new CheckpointStore(Path.Combine(DataRoot, "checkpoints"), Fingerprint,
             MaxManualCheckpoints.Value, MaxPreDialogueCheckpoints.Value);
         LoadWorkStore = new LoadWorkStore(Path.Combine(DataRoot, "load-work"));
-        new Harmony("beastsaga.safedialoguetools").PatchAll(typeof(Plugin).Assembly);
+        var harmony = new Harmony("beastsaga.safedialoguetools");
+        harmony.PatchAll(typeof(Plugin).Assembly);
+        ItemIcons.Initialize(harmony);
         AddComponent<RuntimeDriver>();
         Log.LogInfo($"Loaded 0.1.0; fingerprint={Fingerprint}; checkpoints={EnableCheckpoints.Value}; testCopy={TestMode}");
     }
@@ -224,7 +226,7 @@ public sealed partial class Plugin : BasePlugin
             var generation = Capture(CheckpointKind.Manual);
             Store.Select(generation);
             Tip("快速存档完成");
-            Store.Prune(DialogueCheckpoint);
+            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration);
         }
         catch (Exception error) { Fail("保存失败，原读取目标保留", error, false); }
     }
@@ -280,7 +282,7 @@ public sealed partial class Plugin : BasePlugin
                 : title.Replace('\r', ' ').Replace('\n', ' ').Trim();
             if (conversation is { Length: > 120 }) conversation = conversation[..120];
             DialogueCheckpoint = Capture(CheckpointKind.PreDialogue, conversation);
-            Store.Prune(DialogueCheckpoint);
+            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration);
             Logger.LogInfo("Pre-dialogue checkpoint: " + title + " / " + DialogueCheckpoint);
         }
         catch (Exception error) { Fail("对话前检查点未建立，本轮对话中 F5 不可用", error, false); }
@@ -304,6 +306,7 @@ public sealed partial class Plugin : BasePlugin
             NativeSave.Validate(LoadWork);
             if (Login._Instance == null || LoadMain._Instance == null) throw new InvalidOperationException("官方场景重载入口不可用");
             CommandPanelState.Close();
+            ItemEditor.Reset("开始读档");
             PanelNoteEditing = false;
             Loading = true;
             LoadStarted = Time.realtimeSinceStartup;
@@ -353,6 +356,7 @@ public sealed partial class Plugin : BasePlugin
         var dialogue = IsDialogue;
         if (previousDialogue && !dialogue) DialogueCheckpoint = null;
         previousDialogue = dialogue;
+        ItemEditor.Tick();
         if (TestMode) TestBridge.Tick();
     }
 
@@ -526,10 +530,11 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private CheckpointArchiveSortMode archiveViewMode = (CheckpointArchiveSortMode)(-1);
     private CheckpointArchiveFilter archiveViewFilter = (CheckpointArchiveFilter)(-1);
 
-    public RuntimeDriver(IntPtr pointer) : base(pointer) { }
+    public RuntimeDriver(IntPtr pointer) : base(pointer) { if (Plugin.TestMode) TestBridge.Runtime = this; }
 
     public void OnDestroy()
     {
+        ItemEditor.Reset("插件销毁");
         if (thumbnailTexture != null) UnityEngine.Object.Destroy(thumbnailTexture);
         thumbnailTexture = null;
         thumbnailGeneration = null;
@@ -576,6 +581,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                     return;
                 }
                 CommandPanelState.Close();
+                ItemEditor.Reset("面板关闭");
                 Plugin.PanelNoteEditing = false;
                 return;
             }

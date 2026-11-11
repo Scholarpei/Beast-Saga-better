@@ -7,6 +7,7 @@ namespace SafeDialogueTools;
 
 internal static class TestBridge
 {
+    internal static RuntimeDriver? Runtime;
     private static float lastPoll;
     internal static string CoroutineStatus = "";
 
@@ -103,6 +104,7 @@ internal static class TestBridge
             else if (command == "dump-db") DumpDatabase();
             else if (command == "capture") ScreenCapture.CaptureScreenshot(Path.Combine(Plugin.GameRoot, "test-frame.png"));
             else if (command == "cheat-state") WriteCheatState();
+            else if (command.StartsWith("items-", StringComparison.Ordinal)) ItemCommand(command);
             else if (command == "cheat-probe") WriteCheatProbe();
             else if (command.StartsWith("cheat-set-stat|")) RunCheatSetStat(command);
             else if (command.StartsWith("cheat-set-martial|")) RunCheatSetMartial(command);
@@ -137,6 +139,85 @@ internal static class TestBridge
         {
             Plugin.Logger.LogError(error);
             File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-result.txt"), error.ToString());
+        }
+    }
+
+    private static void ItemJson(string name, object? value) => File.WriteAllText(
+        Path.Combine(Plugin.GameRoot, "test-items-" + name + ".json"),
+        JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
+
+    private static void ItemCommand(string command)
+    {
+        if (!Plugin.TestMode) throw new InvalidOperationException("Only isolated TestMode supports item diagnostics");
+        var parts = command.Split('|');
+        switch (parts[0])
+        {
+            case "items-state":
+                if (PlayerDataManager._Instance?._PlayerData != null) ItemEditor.RefreshSnapshot();
+                ItemJson("state", new { epoch = ItemEditor.Epoch, catalogReady = ItemEditor.CatalogReady, catalogCount = ItemEditor.Catalog.Count,
+                    pageActive = ItemEditor.PageActive, block = ItemEditor.Block, busy = ItemEditor.IsBusy, checkpoint = ItemEditor.ProtectedGeneration,
+                    counts = ItemEditor.Counts, equipment = ItemEditor.Equipment, status = ItemEditor.Status, timings = ItemTimings.Snapshot() });
+                break;
+            case "items-catalog":
+                if (parts.Length != 4 || !int.TryParse(parts[2], out var category) || category is < -1 or > 8 || !bool.TryParse(parts[3], out var owned)) throw new InvalidOperationException("items-catalog|search|category(-1,0,1..8)|owned(bool)");
+                var source = category == -1 ? ItemEditor.Catalog.Where(entry => entry.IsEquipment) : category > 0 ? ItemEditor.Catalog.Where(entry => !entry.IsEquipment && entry.Category == category) : ItemEditor.Catalog;
+                ItemJson("catalog", new { ready = ItemEditor.CatalogReady, total = ItemEditor.Catalog.Count,
+                    entries = CheatItemCatalog.Filter(source, parts[1], onlyOwned: owned, ownedCounts: ItemEditor.Counts).Select(entry => new { entry, owned = ItemEditor.Counts.GetValueOrDefault(entry.Key) }).ToArray() });
+                break;
+            case "items-ui":
+                if (parts.Length != 7 || !int.TryParse(parts[2], out var uiCategory) || uiCategory is < -1 or > 8 || !bool.TryParse(parts[3], out var uiOwned) ||
+                    !float.TryParse(parts[5], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var scrollY) || !float.IsFinite(scrollY) || scrollY < 0)
+                    throw new InvalidOperationException("items-ui|search|category(-1,0,1..8)|owned(bool)|selectedKey|scrollY|quantity");
+                if (!ItemEditor.PageActive || Runtime == null) throw new InvalidOperationException("先执行 items-open 并等待物品页实例就绪");
+                Runtime.SetItemFixture(parts[1], uiCategory, uiOwned, parts[4], scrollY, parts[6]);
+                ItemIcons.TestVisible = null;
+                break;
+            case "items-request":
+                if (parts.Length != 5 || !Enum.TryParse<ItemEditOperation>(parts[1], true, out var operation) || !long.TryParse(parts[3], out var quantity)) throw new InvalidOperationException("items-request|Add/Remove|key|quantity|instanceKeys(comma-separated or empty)");
+                var accepted = ItemEditor.Request(parts[2], operation, quantity, parts[4].Split(',', StringSplitOptions.RemoveEmptyEntries));
+                ItemJson("request", new { accepted, queued = accepted, requestId = ItemEditor.RequestId, epoch = ItemEditor.Epoch });
+                break;
+            case "items-result":
+                ItemJson("result", new { busy = ItemEditor.IsBusy, result = ItemEditor.LastResult, checkpoint = ItemEditor.ProtectedGeneration });
+                break;
+            case "items-icons":
+                ItemJson("icons", ItemIcons.Metrics);
+                break;
+            case "items-visible":
+                if (parts.Length != 2) throw new InvalidOperationException("items-visible|comma-separated-keys (empty clears test override)");
+                ItemIcons.TestVisible = parts[1].Length == 0 ? null : parts[1].Split(',', StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).Take(64).ToArray();
+                ItemJson("visible", new { keys = ItemIcons.TestVisible });
+                break;
+            case "items-open":
+                if (!CommandPanelState.Open) Plugin.TogglePanel();
+                if (!CommandPanelState.Open) throw new InvalidOperationException("当前游戏状态不允许打开工具面板");
+                CommandPanelState.SelectTab(CommandPanelTab.Cheats); CommandPanelState.SelectCheatSection(CheatSection.Items);
+                break;
+            case "items-close":
+                CommandPanelState.Close(); ItemEditor.Reset("测试关闭面板");
+                break;
+            case "items-native-bag":
+                if (parts.Length != 2) throw new InvalidOperationException("items-native-bag|open-item/open-equip/close/state");
+                if (parts[1] is "open-item" or "open-equip")
+                {
+                    var reason = Plugin.UnsafeReason(false);
+                    if (reason != null) throw new InvalidOperationException(reason);
+                    CommandPanelState.Close(); ItemEditor.Reset("打开原生背包");
+                    if (parts[1] == "open-item") OpenUIManager._Inst.OpenItemBag(true, false);
+                    else OpenUIManager._Inst.OpenWeaponBag(true, false);
+                }
+                else if (parts[1] == "close")
+                {
+                    LJG.Framework.Main.m_UI.GetOpenedUI<ItemBagUILogicResident>()?.OnClickReturn();
+                    LJG.Framework.Main.m_UI.GetOpenedUI<WeaponBagUILogicResident>()?.OnClickReturn();
+                }
+                else if (parts[1] != "state") throw new InvalidOperationException("Unknown native bag operation");
+                var bag = LJG.Framework.Main.m_UI.GetOpenedUI<ItemBagUILogicResident>();
+                var weaponBag = LJG.Framework.Main.m_UI.GetOpenedUI<WeaponBagUILogicResident>();
+                ItemJson("native-bag", new { itemOpen = bag != null, equipOpen = weaponBag != null,
+                    itemIcons = bag?._ItemData?.ToArray().Select(info => info.ui_icon).ToArray() });
+                break;
+            default: throw new InvalidOperationException("Unknown item command");
         }
     }
 

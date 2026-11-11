@@ -737,7 +737,7 @@ try
         Require(CheatSectionCatalog.Default == CheatSection.Character);
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Character));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Points));
-        Require(!CheatSectionCatalog.IsAvailable(CheatSection.Items));
+        Require(CheatSectionCatalog.IsAvailable(CheatSection.Items));
         Require(!CheatSectionCatalog.IsAvailable(CheatSection.Combat));
         Require(!CheatSectionCatalog.IsAvailable(CheatSection.World));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Other));
@@ -749,7 +749,9 @@ try
         CommandPanelState.SelectCheatSection(CheatSection.Points);
         Require(CommandPanelState.CheatSection == CheatSection.Points);
         CommandPanelState.SelectCheatSection(CheatSection.Items);
-        Require(CommandPanelState.CheatSection == CheatSection.Points);
+        Require(CommandPanelState.CheatSection == CheatSection.Items);
+        CommandPanelState.SelectCheatSection(CheatSection.Combat);
+        Require(CommandPanelState.CheatSection == CheatSection.Items);
         CommandPanelState.SelectCheatSection(CheatSection.Other);
         Require(CommandPanelState.CheatSection == CheatSection.Other);
         CommandPanelState.Reset();

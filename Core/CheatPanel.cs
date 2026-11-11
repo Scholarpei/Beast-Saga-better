@@ -18,7 +18,7 @@ public static class CheatSectionCatalog
     {
         new CheatSectionInfo(CheatSection.Character, "角色属性", true),
         new CheatSectionInfo(CheatSection.Points, "点数", true),
-        new CheatSectionInfo(CheatSection.Items, "物品", false, "第二批"),
+        new CheatSectionInfo(CheatSection.Items, "物品", true),
         new CheatSectionInfo(CheatSection.Combat, "战斗", false, "第二批"),
         new CheatSectionInfo(CheatSection.World, "世界", false, "第二批"),
         new CheatSectionInfo(CheatSection.Other, "其他", true)

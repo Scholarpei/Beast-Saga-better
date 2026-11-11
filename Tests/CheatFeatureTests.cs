@@ -34,8 +34,8 @@ internal static class CheatFeatureTests
             Require(all.All(item => !string.IsNullOrWhiteSpace(item.Label)));
             Require(CheatSectionCatalog.Default == CheatSection.Character);
             Require(CheatSectionCatalog.Get(CheatSection.Points).Label == "点数");
-            Require(!CheatSectionCatalog.Get(CheatSection.Items).Available);
-            Require(CheatSectionCatalog.Get(CheatSection.Items).Badge == "第二批");
+            Require(CheatSectionCatalog.Get(CheatSection.Items).Available);
+            Require(CheatSectionCatalog.Get(CheatSection.Items).Badge == null);
         });
 
         Test("unknown cheat sections do not become selectable and Get rejects them", () =>
@@ -310,7 +310,7 @@ internal static class CheatFeatureTests
             CommandPanelState.SelectTab(CommandPanelTab.Cheats);
             CommandPanelState.SelectCheatSection(CheatSection.Points);
             CommandPanelState.SelectCheatSection(CheatSection.Items);
-            Require(CommandPanelState.CheatSection == CheatSection.Points);
+            Require(CommandPanelState.CheatSection == CheatSection.Items);
             CommandPanelState.Reset();
             Require(!CommandPanelState.Open);
             Require(CommandPanelState.Tab == CommandPanelTab.Status);

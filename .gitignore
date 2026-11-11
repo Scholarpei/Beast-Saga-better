@@ -15,6 +15,7 @@ tools/re/
 tools/PanelPreview/bin/
 tools/PanelPreview/obj/
 .local/
+.superpowers/
 AGENTS.md
 MEMORY.md
 PROGRESS.md

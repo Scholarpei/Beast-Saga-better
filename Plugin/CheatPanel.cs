@@ -137,6 +137,11 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             DrawCheatDisabled(bounds, section);
             return;
         }
+        if (section.Section == CheatSection.Items)
+        {
+            DrawItemsPage(bounds);
+            return;
+        }
         var reason = CheatEditor.EditBlockReason();
         var title = section.Label;
         var description = section.Section switch
