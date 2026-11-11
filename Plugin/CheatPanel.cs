@@ -1122,6 +1122,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     private static Texture2D RoundedTexture(Color32 fill, Color32 border, int radius)
     {
         const int size = 32;
+        radius = PanelTextureGeometry.ClampCornerRadius(radius, size);
         var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
         {
             hideFlags = HideFlags.DontSave,

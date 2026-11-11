@@ -25,6 +25,13 @@ internal static class PanelRegressionTests
                 inner.Right <= outer.Right + .01f && inner.Bottom <= outer.Bottom + .01f,
                 inner + " is outside " + outer);
         }
+        Test("rounded panel texture radius is clamped to the supported geometry", () =>
+        {
+            Require(PanelTextureGeometry.ClampCornerRadius(16, 32) == 15);
+            Require(PanelTextureGeometry.ClampCornerRadius(15, 32) == 15);
+            Require(PanelTextureGeometry.ClampCornerRadius(0, 32) == 0);
+            Require(PanelTextureGeometry.ClampCornerRadius(-5, 32) == 0);
+        });
         foreach (var (width, height) in new[] { (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160) })
         {
             Test($"archive baseline row reserves three scaled lines at {width}x{height}", () =>

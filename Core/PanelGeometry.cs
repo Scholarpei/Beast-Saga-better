@@ -9,6 +9,15 @@ public readonly record struct PanelRect(float X, float Y, float Width, float Hei
         float.IsFinite(Right) && float.IsFinite(Bottom);
 }
 
+public static class PanelTextureGeometry
+{
+    public static int ClampCornerRadius(int radius, int size)
+    {
+        if (size < 2) throw new ArgumentOutOfRangeException(nameof(size));
+        return Math.Clamp(radius, 0, (size - 2) / 2);
+    }
+}
+
 public readonly record struct PanelBodyLayout(PanelRect View, PanelRect Footer)
 {
     public static PanelBodyLayout Create(float width, float height, float scale) => new(
