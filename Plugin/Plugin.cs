@@ -47,6 +47,12 @@ public sealed partial class Plugin : BasePlugin
     internal static bool TestMode;
     internal static bool PendingNativeLoad;
     internal static bool NativeLoadCompleted;
+    internal static bool ContinueRequested;
+    internal static float ContinueRequestedAt;
+    internal static bool NativeLoadStarted;
+    internal static int ExpectedContinueQuick;
+    internal static bool ContinueIndexReady;
+    internal static bool ContinueReady;
     internal static int GuiFrames;
     internal static string? PanelSelectedCheckpoint;
     internal static string? PanelArchiveSelection;
@@ -58,6 +64,25 @@ public sealed partial class Plugin : BasePlugin
     internal const string ProductionAuthorizationFile = "SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED";
     internal static bool CheckpointsActive => SafetyPolicy.CanOperate(
         TestMode, EnableCheckpoints.Value, File.Exists(Path.Combine(GameRoot, ProductionAuthorizationFile)));
+
+    internal static bool TryBeginContinueRequest()
+    {
+        var now = Time.realtimeSinceStartup;
+        var pending = ContinueRequested ? now - ContinueRequestedAt : 0;
+        if (!LoadRequestPolicy.AllowContinue(
+                TestMode, ContinueRequested, NativeLoadStarted, pending, LoadRequestPolicy.DefaultAbandonAfter))
+        {
+            Logger.LogInfo("忽略重复的继续游戏请求：上一次读档尚未完成");
+            return false;
+        }
+        if (!ContinueRequested || pending > LoadRequestPolicy.DefaultAbandonAfter)
+        {
+            ContinueRequested = true;
+            ContinueRequestedAt = now;
+            NativeLoadStarted = false;
+        }
+        return true;
+    }
 
     internal static string PanelCloseHint => ClosePanelKey.Value == KeyCode.None || ClosePanelKey.Value == PanelKey.Value
         ? $"{PanelKey.Value} 收起"
@@ -77,7 +102,15 @@ public sealed partial class Plugin : BasePlugin
             File.Exists(Path.Combine(GameRoot, "SaveData", "seed.es3"));
         if (File.Exists(Path.Combine(GameRoot, "SAFE_DIALOGUE_TEST_COPY")) && !TestMode)
             throw new InvalidOperationException("Invalid isolated test copy layout");
-        if (TestMode) Environment.CurrentDirectory = GameRoot;
+        if (TestMode)
+        {
+            Environment.CurrentDirectory = GameRoot;
+            Application.runInBackground = true;
+            var expectedPath = Path.Combine(GameRoot, "test-expected-quick.txt");
+            if (File.Exists(expectedPath) && int.TryParse(File.ReadAllText(expectedPath).Trim(), out var expected) &&
+                expected is >= 1 and <= 3)
+                ExpectedContinueQuick = expected;
+        }
         EnableCheckpoints = Config.Bind("General", "EnableCheckpoints", false,
             "本版本仅允许隔离副本启用 SL，正式目录即使设为 true 也不会接管原生 F5。");
         EnableIndicators = Config.Bind("General", "EnableIndicators", true, "显示只读判定提示；未知条件不推测结果。");
@@ -352,6 +385,12 @@ public sealed partial class Plugin : BasePlugin
             }
             else if (Time.realtimeSinceStartup - LoadStarted > 90)
                 Fail("读档超时，已停用本次运行的存读档，请重启游戏", new TimeoutException(), true);
+        }
+        if (TestMode && ContinueRequested && !NativeLoadStarted &&
+            Time.realtimeSinceStartup - ContinueRequestedAt > LoadRequestPolicy.DefaultAbandonAfter)
+        {
+            ContinueRequested = false;
+            Logger.LogWarning("继续游戏请求未进入读档，已解除重复请求锁");
         }
         var dialogue = IsDialogue;
         if (previousDialogue && !dialogue) DialogueCheckpoint = null;

@@ -14,6 +14,7 @@ internal static class TestBridge
     internal static void Tick()
     {
         if (!Plugin.TestMode) return;
+        RefreshContinueReady();
         if (Time.realtimeSinceStartup - lastPoll < 0.5f) return;
         lastPoll = Time.realtimeSinceStartup;
         var commandPath = Path.Combine(Plugin.GameRoot, "test-command.txt");
@@ -27,7 +28,67 @@ internal static class TestBridge
             {
                 var login = LJG.Framework.Main.m_UI.GetOpenedUI<LoginUILogicResident>();
                 if (login == null) throw new InvalidOperationException("登录界面尚未打开");
+                if (Plugin.ContinueRequested || Plugin.NativeLoadStarted)
+                {
+                    Plugin.Logger.LogInfo("继续游戏已在加载中，测试桥未重复发起读档");
+                    File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-result.txt"), "OK " + command);
+                    return;
+                }
                 login.OnContinueGame();
+            }
+            else if (command.StartsWith("menu-continue-quick:", StringComparison.Ordinal))
+            {
+                if (!int.TryParse(command["menu-continue-quick:".Length..], out var quickIndex) || quickIndex is < 1 or > 3)
+                    throw new InvalidOperationException("Invalid quick save index");
+                var login = LJG.Framework.Main.m_UI.GetOpenedUI<LoginUILogicResident>();
+                if (login == null) throw new InvalidOperationException("登录界面尚未打开");
+                if (Plugin.ContinueRequested || Plugin.NativeLoadStarted)
+                {
+                    Plugin.Logger.LogInfo("继续游戏已在加载中，测试桥未重复发起读档");
+                    File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-result.txt"), "OK " + command);
+                    return;
+                }
+                var first = login.m_firstSave;
+                if (first?.data == null) throw new InvalidOperationException("继续游戏尚未准备好：没有可继续的存档");
+                if (first.ui_type != 1 || first.id != quickIndex)
+                    throw new InvalidOperationException(
+                        $"继续游戏会读取 type={first.ui_type} id={first.id} path={first.data.Path}，不是 quick{quickIndex}.es3");
+                login.OnContinueGame();
+            }
+            else if (command == "rebuild-save-info" || command.StartsWith("rebuild-save-info:", StringComparison.Ordinal))
+            {
+                var manager = SaveManager._Instance ?? throw new InvalidOperationException("SaveManager 尚未就绪");
+                var data = manager._SaveManagerInfo ?? throw new InvalidOperationException("存档索引尚未就绪");
+                var quickIndex = Plugin.ExpectedContinueQuick;
+                var separator = command.IndexOf(':');
+                if (separator >= 0 && (!int.TryParse(command[(separator + 1)..], out quickIndex) || quickIndex is < 1 or > 3))
+                    throw new InvalidOperationException("Invalid quick save index");
+                if (quickIndex is < 1 or > 3) throw new InvalidOperationException("No expected quick save index");
+                Plugin.ExpectedContinueQuick = quickIndex;
+                var quickPath = Path.Combine(manager.Path, $"quick{quickIndex}.es3");
+                if (!File.Exists(quickPath)) throw new InvalidOperationException("Missing isolated quick save: " + quickPath);
+                var quickFile = new ES3File(quickPath);
+                var info = quickFile.Load<SaveInfo>(SaveManager.SaveInfoData)
+                    ?? throw new InvalidOperationException("Quick save has no SaveInfo: " + quickPath);
+                info.Path = $"quick{quickIndex}.es3";
+                quickFile.Save<SaveInfo>(SaveManager.SaveInfoData, info);
+                quickFile.Sync();
+                data._AutoSave.Clear();
+                data._QuickSave.Clear();
+                data._CustomSave.Clear();
+                data._NoteSave.Clear();
+                data._QuickSave[quickIndex] = info;
+                data.autoNum = 0;
+                data.quickNum = quickIndex;
+                data.customNum = 0;
+                data.noteNum = 0;
+                var saveDataInfo = HarmonyLib.AccessTools.Method(typeof(SaveManager), "SaveDataInfo")
+                    ?? throw new InvalidOperationException("找不到 SaveDataInfo");
+                saveDataInfo.Invoke(manager, null);
+                LJG.Framework.Main.m_UI.GetOpenedUI<LoginUILogicResident>()?.CheckFirstSaveData();
+                Plugin.ContinueIndexReady = true;
+                Plugin.ContinueReady = false;
+                RefreshContinueReady();
             }
             else if (command == "save") Plugin.SavePressed();
             else if (command == "load") Plugin.LoadPressed();
@@ -62,6 +123,17 @@ internal static class TestBridge
             else if (command.StartsWith("native-load-quick:"))
             {
                 if (!int.TryParse(command.AsSpan(18), out var quickIndex)) throw new InvalidOperationException("Invalid quick save index");
+                if (Plugin.ContinueRequested || Plugin.NativeLoadStarted)
+                {
+                    Plugin.Logger.LogInfo("继续游戏已在加载中，测试桥未重复发起读档");
+                    File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-result.txt"), "OK " + command);
+                    return;
+                }
+                if (!Plugin.TryBeginContinueRequest())
+                {
+                    File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-result.txt"), "OK " + command);
+                    return;
+                }
                 SaveManager._Instance.SelectQuickGame(quickIndex);
             }
             else if (command == "load-seed")
@@ -359,6 +431,20 @@ internal static class TestBridge
             }, new JsonSerializerOptions { WriteIndented = true }));
     }
 
+    private static void RefreshContinueReady()
+    {
+        if (!Plugin.ContinueIndexReady || Plugin.ContinueReady || Plugin.ExpectedContinueQuick is < 1 or > 3) return;
+        var login = LJG.Framework.Main.m_UI?.GetOpenedUI<LoginUILogicResident>();
+        if (login == null || !LoadRequestPolicy.MenuReady(
+                true, login.ui_TBaseIn?.playing == true, login.ui_Continue?.enabled == true,
+                login.ui_Continue?.visible == true, login.ui_Continue?.touchable == true))
+            return;
+        var first = login.m_firstSave;
+        if (first?.data == null || first.ui_type != 1 || first.id != Plugin.ExpectedContinueQuick) return;
+        Plugin.ContinueReady = true;
+        Plugin.Logger.LogInfo("主菜单入场动画已结束，继续游戏目标已就绪");
+    }
+
     private static void WriteCheatProbe()
     {
         var manager = PlayerDataManager._Instance;
@@ -410,6 +496,38 @@ internal static class TestBridge
             ["panelOpen"] = CommandPanelState.Open,
             ["conversation"] = DialogueManager.hasInstance ? DialogueManager.lastConversationID : null
         };
+        try
+        {
+            var first = LJG.Framework.Main.m_UI?.GetOpenedUI<LoginUILogicResident>()?.m_firstSave;
+            values["loginOpen"] = LJG.Framework.Main.m_UI?.GetOpenedUI<LoginUILogicResident>() != null;
+            values["firstSaveType"] = first?.ui_type;
+            values["firstSaveId"] = first?.id;
+            values["firstSavePath"] = first?.data?.Path;
+            values["firstSaveTime"] = first?.data?.updateTime;
+            var login = LJG.Framework.Main.m_UI?.GetOpenedUI<LoginUILogicResident>();
+            values["continueEnabled"] = login?.ui_Continue?.enabled;
+            values["continueVisible"] = login?.ui_Continue?.visible;
+            values["continueTouchable"] = login?.ui_Continue?.touchable;
+            values["baseTransitionPlaying"] = login?.ui_TBaseIn?.playing;
+            values["videoEnd"] = login?.m_videoend;
+        }
+        catch
+        {
+            values["loginOpen"] = false;
+            values["firstSaveType"] = null;
+            values["firstSaveId"] = null;
+            values["firstSavePath"] = null;
+            values["firstSaveTime"] = null;
+            values["continueEnabled"] = null;
+            values["continueVisible"] = null;
+            values["continueTouchable"] = null;
+            values["baseTransitionPlaying"] = null;
+            values["videoEnd"] = null;
+        }
+        values["continueRequested"] = Plugin.ContinueRequested;
+        values["nativeLoadStarted"] = Plugin.NativeLoadStarted;
+        values["continueIndexReady"] = Plugin.ContinueIndexReady;
+        values["continueReady"] = Plugin.ContinueReady;
         values["guiFrames"] = Plugin.GuiFrames;
         if (Plugin.IsDialogue)
         {
@@ -504,6 +622,11 @@ internal static class LoadDiagnosticPatch
 {
     private static void Postfix(SaveManager._LoadSaveGame_d__111 __instance, bool __result)
     {
+        if (!__result)
+        {
+            Plugin.ContinueRequested = false;
+            Plugin.NativeLoadStarted = false;
+        }
         if (!__result && Plugin.Loading && !Plugin.PendingNativeLoad &&
             __instance.__4__this.fileName == Path.Combine(Plugin.LoadWork, "save.es3")) Plugin.NativeLoadCompleted = true;
         if (!Plugin.TestMode) return;
@@ -511,5 +634,55 @@ internal static class LoadDiagnosticPatch
         if (status == TestBridge.CoroutineStatus) return;
         TestBridge.CoroutineStatus = status;
         Plugin.Logger.LogInfo("Native load " + status);
+    }
+}
+
+[HarmonyLib.HarmonyPatch(typeof(SaveManager), nameof(SaveManager.LoadGameSave))]
+internal static class NativeLoadStartPatch
+{
+    private static void Prefix()
+    {
+        if (!Plugin.TestMode) return;
+        Plugin.NativeLoadStarted = true;
+        if (!Plugin.ContinueRequested)
+        {
+            Plugin.ContinueRequested = true;
+            Plugin.ContinueRequestedAt = Time.realtimeSinceStartup;
+        }
+    }
+}
+
+[HarmonyLib.HarmonyPatch(typeof(LoginUILogicResident), "OnContinueGame")]
+internal static class ContinueGameGuardPatch
+{
+    private static bool Prefix(LoginUILogicResident __instance)
+    {
+        if (!Plugin.TestMode) return true;
+        if (Plugin.ExpectedContinueQuick is >= 1 and <= 3)
+        {
+            var first = __instance.m_firstSave;
+            if (first?.data == null || first.ui_type != 1 || first.id != Plugin.ExpectedContinueQuick)
+            {
+                Plugin.Logger.LogWarning(
+                    $"拒绝继续游戏：当前目标 type={first?.ui_type} id={first?.id} path={first?.data?.Path}，应为 quick{Plugin.ExpectedContinueQuick}.es3");
+                Plugin.Tip("测试存档仍在准备，请稍候再继续");
+                return false;
+            }
+            if (!Plugin.ContinueReady)
+            {
+                Plugin.Logger.LogWarning("拒绝继续游戏：隔离存档尚未完成重建索引");
+                Plugin.Tip("测试存档仍在准备，请稍候再继续");
+                return false;
+            }
+            if (!LoadRequestPolicy.MenuReady(
+                    true, __instance.ui_TBaseIn?.playing == true, __instance.ui_Continue?.enabled == true,
+                    __instance.ui_Continue?.visible == true, __instance.ui_Continue?.touchable == true))
+            {
+                Plugin.Logger.LogWarning("拒绝继续游戏：主菜单入场动画或按钮尚未就绪");
+                Plugin.Tip("主菜单仍在载入，请稍候再继续");
+                return false;
+            }
+        }
+        return Plugin.TryBeginContinueRequest();
     }
 }

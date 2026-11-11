@@ -649,6 +649,24 @@ try
         Require(SafetyPolicy.Route(true, true, false, 1) == LoadRoute.Isolated));
     Test("ordinary native loads remain unchanged", () =>
         Require(SafetyPolicy.Route(false, false, false, 2) == LoadRoute.Original));
+    Test("continue requests are ignored while a native load is pending", () =>
+    {
+        Require(LoadRequestPolicy.AllowContinue(true, false, false, 0));
+        Require(!LoadRequestPolicy.AllowContinue(true, true, false, 0.5f));
+        Require(!LoadRequestPolicy.AllowContinue(true, true, true, 0.5f));
+        Require(!LoadRequestPolicy.AllowContinue(true, false, true, 0.5f));
+        Require(LoadRequestPolicy.AllowContinue(true, true, false, 11f));
+        Require(LoadRequestPolicy.AllowContinue(false, true, true, 0.5f));
+    });
+    Test("continue stays blocked until the menu transition and button are ready", () =>
+    {
+        Require(LoadRequestPolicy.MenuReady(true, false, true, true, true));
+        Require(!LoadRequestPolicy.MenuReady(false, false, true, true, true));
+        Require(!LoadRequestPolicy.MenuReady(true, true, true, true, true));
+        Require(!LoadRequestPolicy.MenuReady(true, false, false, true, true));
+        Require(!LoadRequestPolicy.MenuReady(true, false, true, false, true));
+        Require(!LoadRequestPolicy.MenuReady(true, false, true, true, false));
+    });
     Test("panel toggles only while the game is focused and no field accepts text", () =>
     {
         CommandPanelState.Open = false;
