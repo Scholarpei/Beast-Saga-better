@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Diagnostics;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -50,7 +51,6 @@ public sealed class Plugin : BasePlugin
     internal static string PanelNoteDraft = "";
     internal static bool PanelNoteEditing;
     internal static LoadWorkStore LoadWorkStore = null!;
-    internal static float NextArchiveRefresh;
     internal const string KnownFingerprint = "B12412BC21B0B88A07851D15235736AFCFCE48A22AB8D3F1CB3DFB8376360359";
     internal const string ProductionAuthorizationFile = "SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED";
     internal static bool CheckpointsActive => SafetyPolicy.CanOperate(
@@ -160,19 +160,10 @@ public sealed class Plugin : BasePlugin
         if (!CheckpointsActive || Store == null || Faulted) return;
         try
         {
-            PanelArchive = Store.List(verifyPayloads: false).Select(item =>
-            {
-                if (item.Kind != CheckpointKind.Legacy) return item;
-                var info = NativeSave.ReadInfo(Store.Validate(item.Generation));
-                return item with
-                {
-                    CapturedAt = DateTime.TryParse(info.updateTime, out var captured) ? captured : item.CapturedAt,
-                    MapName = info.mapName,
-                    PlayerLevel = info.playerLv,
-                    Round = info.round,
-                    Day = SafeDialogueTools.PanelArchiveData.ReadLegacyDay(item.Generation)
-                };
-            }).ToArray();
+            var watch = Stopwatch.StartNew();
+            PanelArchive = Store.List(verifyPayloads: false).ToArray();
+            if (watch.ElapsedMilliseconds >= 30)
+                Logger.LogInfo($"面板存档列表刷新 {PanelArchive.Count} 项，耗时 {watch.ElapsedMilliseconds} ms");
         }
         catch (Exception error) { Logger.LogMessage("面板无法读取历史存档：" + error.Message); }
     }
@@ -332,20 +323,17 @@ public sealed class Plugin : BasePlugin
 
     internal static CommandPanelState.State PanelState()
     {
-        if (CommandPanelState.Open && CommandPanelState.Tab == CommandPanelTab.Archive && !Faulted &&
-            Time.realtimeSinceStartup >= NextArchiveRefresh && !PanelNoteEditing)
-        {
-            NextArchiveRefresh = Time.realtimeSinceStartup + 0.5f;
-            RefreshPanelArchive();
-        }
         PanelArchive ??= Array.Empty<CheckpointSummary>();
         var archive = PanelArchive;
         CheckpointSummary? selection = null;
         if (CheckpointsActive && !Faulted)
         {
-            var manual = archive.Where(item => item.Kind == CheckpointKind.Manual).ToArray();
-            selection = manual.FirstOrDefault(item => item.Generation == PanelArchiveSelection) ??
-                        manual.FirstOrDefault(item => item.Generation == PanelSelectedCheckpoint);
+            foreach (var item in archive)
+            {
+                if (item.Kind != CheckpointKind.Manual) continue;
+                if (item.Generation == PanelArchiveSelection) { selection = item; break; }
+                if (selection is null && item.Generation == PanelSelectedCheckpoint) selection = item;
+            }
         }
         return new CommandPanelState.State(
             CheckpointsActive, IsDialogue, Busy, Loading, Faulted, EnableIndicators.Value, TestMode,
@@ -356,19 +344,6 @@ public sealed class Plugin : BasePlugin
 internal static class PanelArchiveData
 {
     internal static CheckpointArchiveSortMode SortMode = CheckpointArchiveSortMode.CapturedTime;
-
-    internal static int? ReadLegacyDay(string generation)
-    {
-        try
-        {
-            var time = NativeSave.ReadTime(Plugin.Store.Validate(generation));
-            return time?.dayTime >= 1 ? time.dayTime : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }
 
 [HarmonyPatch(typeof(SaveManager), nameof(SaveManager.SelectQuickGame))]
@@ -444,6 +419,9 @@ public sealed class RuntimeDriver : MonoBehaviour
     private Vector2 archiveScroll;
     private string? thumbnailGeneration;
     private Texture2D? thumbnailTexture;
+    private IReadOnlyList<CheckpointSummary>? archiveView;
+    private IReadOnlyList<CheckpointSummary>? archiveViewSource;
+    private CheckpointArchiveSortMode archiveViewMode = (CheckpointArchiveSortMode)(-1);
 
     public RuntimeDriver(IntPtr pointer) : base(pointer) { }
 
@@ -616,8 +594,17 @@ public sealed class RuntimeDriver : MonoBehaviour
 
     private void DrawArchiveTab(Rect bounds, CommandPanelState.State state)
     {
-        var archive = state.Archive?.Where(item => item.Kind == CheckpointKind.Manual).ToList() ?? new List<CheckpointSummary>();
-        archive = CheckpointArchiveSort.Apply(archive, PanelArchiveData.SortMode).ToList();
+        var source = state.Archive ?? Array.Empty<CheckpointSummary>();
+        if (!ReferenceEquals(source, archiveViewSource) || archiveViewMode != PanelArchiveData.SortMode)
+        {
+            var manual = new List<CheckpointSummary>(source.Count);
+            foreach (var item in source)
+                if (item.Kind == CheckpointKind.Manual) manual.Add(item);
+            archiveView = CheckpointArchiveSort.Apply(manual, PanelArchiveData.SortMode);
+            archiveViewSource = source;
+            archiveViewMode = PanelArchiveData.SortMode;
+        }
+        var archive = archiveView!;
         var metrics = CommandPanelMetrics.Create(CommandPanelLayout.Create(Screen.width, Screen.height));
         var tabBottom = bounds.y + 12 + 78 * metrics.Scale + 12 + Math.Max(34f, 38f * metrics.Scale) + 16;
         var contentBounds = new Rect(bounds.x + 20, tabBottom, bounds.width - 40, bounds.y + bounds.height - 50 - tabBottom);

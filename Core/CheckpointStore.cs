@@ -85,7 +85,7 @@ public sealed class CheckpointStore
         finally { if (File.Exists(pending)) File.Delete(pending); }
     }
 
-    public string? Selected()
+    public string? Selected(bool verifyPayload = true)
     {
         var path = Path.Combine(root, "selected.json");
         if (!File.Exists(path)) return null;
@@ -93,7 +93,8 @@ public sealed class CheckpointStore
         try
         {
             var generation = JsonSerializer.Deserialize<string>(File.ReadAllText(path)) ?? throw new InvalidDataException("Empty read target");
-            Validate(generation);
+            if (verifyPayload) Validate(generation);
+            else CheckSelectionTarget(generation);
             return generation;
         }
         catch (JsonException error) { throw new InvalidDataException("Invalid read target", error); }
@@ -155,7 +156,7 @@ public sealed class CheckpointStore
 
     public IReadOnlyList<CheckpointSummary> List(bool verifyPayloads = true)
     {
-        var selected = TrySelected(out var selectedGeneration) ? selectedGeneration : null;
+        var selected = TrySelected(out var selectedGeneration, verifyPayloads) ? selectedGeneration : null;
         var notes = Notes();
         var summaries = new List<CheckpointSummary>();
         foreach (var name in Directory.GetDirectories(root).Select(Path.GetFileName).Where(name => name is not null).OrderByDescending(name => name, StringComparer.Ordinal))
@@ -218,10 +219,17 @@ public sealed class CheckpointStore
         finally { if (File.Exists(pending)) File.Delete(pending); }
     }
 
-    private bool TrySelected(out string? generation)
+    private bool TrySelected(out string? generation, bool verifyPayload = true)
     {
-        try { generation = Selected(); return generation is not null; }
+        try { generation = Selected(verifyPayload); return generation is not null; }
         catch (InvalidDataException) { generation = null; return false; }
+    }
+
+    private void CheckSelectionTarget(string generation)
+    {
+        if (!Regex.IsMatch(generation, @"\A[0-9]{17}-[a-f0-9]{32}\z")) throw new InvalidDataException("Invalid generation identifier");
+        CheckDirectory(root);
+        CheckDirectory(Path.Combine(root, generation));
     }
 
     private Manifest ReadManifest(string generation)

@@ -81,6 +81,22 @@ internal static class CheckpointHistoryTests
                 Reject(() => archiveStore.Validate(generation));
             });
 
+            Test("cheap archive listing does not rehash the selected checkpoint", () =>
+            {
+                var cheapRoot = Path.Combine(root, "cheap-selected");
+                var cheapStore = new CheckpointStore(cheapRoot, "v1");
+                var generation = cheapStore.Create(
+                    path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "轻量选择", 10, 1, 1, null));
+                cheapStore.Select(generation);
+                File.AppendAllText(Path.Combine(cheapRoot, generation, "save.es3"), "tampered");
+                var record = cheapStore.List(verifyPayloads: false).Single(item => item.Generation == generation);
+                Require(record.Selected);
+                Require(cheapStore.Selected(verifyPayload: false) == generation);
+                Reject(() => cheapStore.Selected());
+                Reject(() => cheapStore.List());
+            });
+
             Test("manual notes do not consume the rolling checkpoint quota", () =>
             {
                 var noted = Create(CheckpointKind.Manual);
