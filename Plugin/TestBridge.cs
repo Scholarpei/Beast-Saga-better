@@ -97,6 +97,43 @@ internal static class TestBridge
             {
                 Plugin.TogglePanel();
             }
+            else if (command == "map-teleport-begin") MapTeleportController.Begin();
+            else if (command == "map-teleport-close") MapTeleportController.CloseForTest();
+            else if (command.StartsWith("map-teleport-camera:", StringComparison.Ordinal))
+            {
+                var parts = command["map-teleport-camera:".Length..].Split(',');
+                if (parts.Length != 2 ||
+                    !float.TryParse(parts[0], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var cameraX) ||
+                    !float.TryParse(parts[1], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var cameraY))
+                    throw new InvalidOperationException("Invalid camera coordinates");
+                MapTeleportController.MoveCameraForTest(cameraX, cameraY);
+            }
+            else if (command.StartsWith("map-teleport-to:", StringComparison.Ordinal))
+            {
+                var parts = command["map-teleport-to:".Length..].Split(',');
+                if (parts.Length != 2 ||
+                    !float.TryParse(parts[0], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var targetX) ||
+                    !float.TryParse(parts[1], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var targetY))
+                    throw new InvalidOperationException("Invalid teleport coordinates");
+                MapTeleportController.TeleportForTest(targetX, targetY);
+            }
+            else if (command.StartsWith("map-probe:", StringComparison.Ordinal))
+            {
+                var parts = command["map-probe:".Length..].Split(',');
+                if (parts.Length != 2 ||
+                    !float.TryParse(parts[0], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var probeX) ||
+                    !float.TryParse(parts[1], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var probeY))
+                    throw new InvalidOperationException("Invalid map probe coordinates");
+                File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-map-probe.json"),
+                    JsonSerializer.Serialize(MapTeleportController.Probe(probeX, probeY),
+                        new JsonSerializerOptions { WriteIndented = true }));
+            }
             else if (command.StartsWith("panel-tab|"))
             {
                 if (!Enum.TryParse<CommandPanelTab>(command[10..], true, out var tab))
@@ -489,11 +526,14 @@ internal static class TestBridge
             ["utilPath"] = SaveManager.SaveTempUtilDataPath, ["mapInit"] = map?._IsInitOver,
             ["mapClean"] = map?.IsClean, ["mapTeleport"] = map?._ChuangSongMap,
             ["mapTeleporting"] = map?._ChuanSongIng, ["battle"] = battle?._IsBattle,
+            ["mapName"] = TryString(() => map?.GetMapName()), ["mapNameInfo"] = TryString(() => map?.GetMapNameInfo()),
             ["level"] = player?._PlayerData?.Lv, ["notice"] = Plugin.Notice,
             ["checkpoint"] = Plugin.DialogueCheckpoint, ["loading"] = Plugin.Loading,
             ["faulted"] = Plugin.Faulted, ["selected"] = Plugin.Store?.Selected(),
             ["archiveCount"] = Plugin.PanelArchive?.Count,
             ["panelOpen"] = CommandPanelState.Open,
+            ["mapTeleportMode"] = MapTeleportMode.Active,
+            ["mapTeleportDiagnostics"] = MapTeleportController.Diagnostics(),
             ["conversation"] = DialogueManager.hasInstance ? DialogueManager.lastConversationID : null
         };
         try
@@ -547,6 +587,12 @@ internal static class TestBridge
             values["position"] = manager?._Player?.transform.position.ToString();
         }
         File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-state.json"), JsonSerializer.Serialize(values, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static string? TryString(Func<string?> read)
+    {
+        try { return read(); }
+        catch { return null; }
     }
 
     private static void DumpDatabase()

@@ -91,7 +91,7 @@ internal static class ItemEditor
         var save = SaveManager._Instance;
         var unsafeNow = Plugin.Loading || Plugin.Faulted || save == null || !save.IsLogin || !save._IsLoadOver ||
             battle == null || battle._IsBattle || battle._IsStartBattle || battle._IsEnterBattle || battle._IsGameOver ||
-            map == null || !map._IsInitOver || map._ChuanSongIng || map._ChuangSongMap;
+            CheatEditPolicy.MapTransitionBlocked(map?._IsInitOver ?? false, map?._ChuanSongIng ?? false, map?._ChuangSongMap ?? false);
         if (nextPlayer != playerPointer || nextData != dataPointer || nextScene != scene || wasOpen && !open || unsafeNow && !wasUnsafe)
         {
             Reset("会话已失效；下次修改重新建立检查点");

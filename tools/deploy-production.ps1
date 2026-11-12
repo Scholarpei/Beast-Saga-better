@@ -99,7 +99,7 @@ try {
 } finally {
     foreach ($temporary in @($distCopy, $deployCopy, $deployRollback, $distRollback)) {
         if ($null -ne $temporary -and (Test-Path -LiteralPath $temporary.Path)) {
-            Remove-Item -LiteralPath $temporary
+            Remove-Item -LiteralPath $temporary.Path
         }
     }
 }

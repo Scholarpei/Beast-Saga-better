@@ -149,6 +149,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         {
             CheatSection.Character => "不同角色的属性和武学不同；先选角色，再修改该角色的数据。",
             CheatSection.Points => "主角的点数池单独放在这里，不和角色六维混在一起。",
+            CheatSection.World => "在当前地图上点选安全落点，快速传送。",
             _ => "不属于角色属性的开关和运行时修改。"
         };
         var pill = reason is null
@@ -177,6 +178,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                     break;
                 case CheatSection.Other:
                     DrawOtherPage(new Rect(0, 0, content.width, content.height), state);
+                    break;
+                case CheatSection.World:
+                    DrawWorldPage(new Rect(0, 0, content.width, content.height));
                     break;
                 default:
                     DrawCheatDisabled(new Rect(0, 0, content.width, content.height), section);
@@ -248,6 +252,16 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                 CheatSection.Combat => "恢复全队状态、击杀敌人、直接获取战斗奖励。",
                 _ => "设置时间、一键开锁、生成/传送等。"
             }, cheatHintStyle);
+    }
+
+    private void DrawWorldPage(Rect bounds)
+    {
+        GUI.Box(new Rect(0, 0, bounds.width, 150), GUIContent.none, cheatCardStyle!);
+        GUI.Label(new Rect(24, 22, bounds.width - 48, 24), "地图点击传送", cheatSectionTitleStyle);
+        GUI.Label(new Rect(24, 52, bounds.width - 48, 44),
+            "进入当前地图的选择模式后，用鼠标查看可传送落点；绿色可传送，红色不可传送。", cheatHintStyle);
+        if (GUI.Button(new Rect(24, 102, Math.Min(220f, bounds.width - 48), 38), "开始选择传送点", cheatPrimaryButtonStyle!))
+            MapTeleportController.Begin();
     }
 
     private void DrawCharacterPage(Rect bounds)

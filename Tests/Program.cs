@@ -849,7 +849,7 @@ try
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Points));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Items));
         Require(!CheatSectionCatalog.IsAvailable(CheatSection.Combat));
-        Require(!CheatSectionCatalog.IsAvailable(CheatSection.World));
+        Require(CheatSectionCatalog.IsAvailable(CheatSection.World));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Other));
     });
     Test("cheat category selection ignores unavailable sections and resets", () =>
@@ -963,6 +963,9 @@ try
     var cheatFeatures = CheatFeatureTests.Run();
     checks += cheatFeatures.Checks;
     failures += cheatFeatures.Failures;
+    var mapTeleportFeatures = MapTeleportTests.Run();
+    checks += mapTeleportFeatures.Checks;
+    failures += mapTeleportFeatures.Failures;
     var itemFeatures = ItemFeatureTests.Run();
     checks += itemFeatures.Checks;
     failures += itemFeatures.Failures;

@@ -10,7 +10,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-0078d6?style=for-the-badge&logo=windows11)](https://learn.microsoft.com/windows/)
 [![Runtime](https://img.shields.io/badge/runtime-.NET%206-512bd4?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
 [![BepInEx](https://img.shields.io/badge/loader-BepInEx%20IL2CPP-8b5cf6?style=for-the-badge)](https://bepinex.dev/)
-[![Tests](https://img.shields.io/badge/tests-189%2F189-brightgreen?style=for-the-badge)](#验证)
+[![Tests](https://img.shields.io/badge/tests-224%2F224-brightgreen?style=for-the-badge)](#验证)
 
 </div>
 
@@ -69,7 +69,7 @@ RPG 对话最大的成本不是读文本，而是选错以后不知道要回溯�
 
 按 `Tab` 打开面板，`Tab` 或 `Esc` 收起。面板分为状态、存档库和修改作弊三页。
 
-状态页显示运行模式、检查点、读取目标、暂不可用原因和快速操作。修改作弊页按角色属性、点数、物品、战斗、世界、其他分类组织；战斗和世界功能仍标记为第二批。
+状态页显示运行模式、检查点、读取目标、暂不可用原因和快速操作。修改作弊页按角色属性、点数、物品、战斗、世界、其他分类组织；战斗功能仍标记为第二批。
 
 ### 4. 角色与点数修改
 
@@ -92,6 +92,10 @@ RPG 对话最大的成本不是读文本，而是选错以后不知道要回溯�
 物品页支持名称和描述搜索、分类筛选、仅背包筛选、原生图标、详情查看、数量添加与移除。任务类物品和信件只能浏览，不允许增删。装备移除只作用于背包里明确选定的具体实例，排除已穿戴及标记“锁定熔解”的实例。
 
 首次物品增删前会创建并完整校验检查点；同一次面板会话内复用该检查点，关闭面板或读档后重新建立。原生增删仍可能触发剧情条件，检查点是回退这条路的保障，不是“绝对不会影响剧情”的承诺。
+
+### 6. 地图点击传送
+
+世界页可进入当前地图的选择模式。鼠标位置会用绿色或红色标记是否可安全站人；按住任意鼠标键拖动或靠近屏幕边缘可移动相机查看地图，左键短点绿色位置后走游戏官方传送流程移动到目标点，`Esc` 退出并恢复相机。
 
 ## 安全设计
 
@@ -175,7 +179,7 @@ BeastSagaBetterData/
 
 ## 验证
 
-自动化测试覆盖检查点历史、读取策略、判定展示、面板布局、角色、点数和物品修改。当前测试集为 189 项。
+自动化测试覆盖检查点历史、读取策略、判定展示、面板布局、角色、点数、物品修改和地图点击传送纯逻辑。当前测试集为 224 项。
 
 有限场景通过不等于所有剧情旗标、战斗触发器和磁盘异常都已覆盖。遇到读档卡住或状态异常时，先停用对话前 SL 并保留现场，再反馈日志与检查点目录结构。
 

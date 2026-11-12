@@ -414,7 +414,7 @@ internal static class CheatEditor
             manager != null && manager.IsLogin && manager._IsLoadOver && manager._IsCanGame && manager._Player != null,
             manager?.IsSaveIng ?? false,
             battle == null || battle._IsBattle || battle._IsStartBattle || battle._IsEnterBattle || battle._IsGameOver,
-            map == null || !map._IsInitOver || map._ChuanSongIng || map._ChuangSongMap,
+            CheatEditPolicy.MapTransitionBlocked(map?._IsInitOver ?? false, map?._ChuanSongIng ?? false, map?._ChuangSongMap ?? false),
             Plugin.IsDialogue,
             manager?._PlayerCanMove ?? false,
             sequence);

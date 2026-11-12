@@ -9,9 +9,13 @@ internal static class PanelMouseButtonGate
 {
     private static bool Prefix(ref bool __result)
     {
-        if (!CommandPanelState.Open || !CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y)) return true;
-        __result = false;
-        return false;
+        if (!MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
+            CommandPanelState.Open && CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y))
+        {
+            __result = false;
+            return false;
+        }
+        return true;
     }
 }
 
@@ -20,9 +24,13 @@ internal static class PanelMouseButtonDownGate
 {
     private static bool Prefix(ref bool __result)
     {
-        if (!CommandPanelState.Open || !CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y)) return true;
-        __result = false;
-        return false;
+        if (!MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
+            CommandPanelState.Open && CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y))
+        {
+            __result = false;
+            return false;
+        }
+        return true;
     }
 }
 
@@ -31,9 +39,13 @@ internal static class PanelMouseButtonUpGate
 {
     private static bool Prefix(ref bool __result)
     {
-        if (!CommandPanelState.Open || !CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y)) return true;
-        __result = false;
-        return false;
+        if (!MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
+            CommandPanelState.Open && CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y))
+        {
+            __result = false;
+            return false;
+        }
+        return true;
     }
 }
 
@@ -42,9 +54,17 @@ internal static class PanelMouseWheelAxisGate
 {
     private static void Postfix(string axisName, ref float __result)
     {
+        if (__result != 0 && MapTeleportMode.Active && MapTeleportAxisPolicy.IsMovementAxis(axisName)) __result = 0;
         if (__result == 0 || !CommandPanelState.ShouldBlockMouseWheel(axisName, Input.mousePosition.x, Input.mousePosition.y)) return;
         __result = 0;
     }
+}
+
+internal static class MapTeleportAxisPolicy
+{
+    public static bool IsMovementAxis(string axisName) =>
+        axisName.Contains("Horizontal", StringComparison.OrdinalIgnoreCase) ||
+        axisName.Contains("Vertical", StringComparison.OrdinalIgnoreCase);
 }
 
 [HarmonyPatch(typeof(Input), nameof(Input.GetAxisRaw))]
@@ -52,6 +72,7 @@ internal static class PanelMouseWheelRawAxisGate
 {
     private static void Postfix(string axisName, ref float __result)
     {
+        if (__result != 0 && MapTeleportMode.Active && MapTeleportAxisPolicy.IsMovementAxis(axisName)) __result = 0;
         if (__result == 0 || !CommandPanelState.ShouldBlockMouseWheel(axisName, Input.mousePosition.x, Input.mousePosition.y)) return;
         __result = 0;
     }

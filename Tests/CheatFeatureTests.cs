@@ -345,6 +345,16 @@ internal static class CheatFeatureTests
             Require(Reason() is null);
         });
 
+        Test("completed map teleports remain editable", () =>
+        {
+            Require(!CheatEditPolicy.MapTransitionBlocked(
+                initOver: true, teleporting: false, teleportUsed: true));
+            Require(CheatEditPolicy.MapTransitionBlocked(
+                initOver: false, teleporting: false, teleportUsed: false));
+            Require(CheatEditPolicy.MapTransitionBlocked(
+                initOver: true, teleporting: true, teleportUsed: false));
+        });
+
         CheatSessionState.Reset();
         return (checks, failures);
     }

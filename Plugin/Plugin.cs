@@ -232,7 +232,8 @@ public sealed partial class Plugin : BasePlugin
         var battle = BattleManager._Instance;
         if (battle == null || battle._IsBattle || battle._IsStartBattle || battle._IsEnterBattle || battle._IsGameOver) return "战斗或结算期间不可用";
         var map = MapManager._Instance;
-        if (map == null || !map._IsInitOver || map._ChuanSongIng || map._ChuangSongMap) return "地图正在切换或清理";
+        if (map != null && CheatEditPolicy.MapTransitionBlocked(map._IsInitOver, map._ChuanSongIng, map._ChuangSongMap))
+            return "地图正在切换或清理";
         if (!permitDialogue && IsDialogue) return "正在对话";
         if (!permitDialogue && !manager._PlayerCanMove) return "玩家控制尚未恢复";
         if (DialogueManager.hasInstance)
@@ -603,6 +604,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     {
         ItemEditor.Reset("插件销毁");
         CheatEditor.ResetPreEditCheckpoint();
+        MapTeleportController.Destroy();
         if (thumbnailTexture != null) UnityEngine.Object.Destroy(thumbnailTexture);
         thumbnailTexture = null;
         thumbnailGeneration = null;
@@ -630,6 +632,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         try
         {
             Plugin.Tick();
+            MapTeleportController.Update();
             var panel = PanelKeyGate.ReadKeyDown(Plugin.PanelKey.Value);
             var close = PanelKeyGate.ReadKeyDown(Plugin.ClosePanelKey.Value);
             var save = Plugin.CheckpointsActive && Input.GetKeyDown(Plugin.SaveKey.Value);
@@ -684,6 +687,12 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         catch (Exception error) { Plugin.Fail("插件操作已中止", error, true); }
     }
 
+    public void LateUpdate()
+    {
+        try { MapTeleportController.LateUpdate(); }
+        catch (Exception error) { Plugin.Fail("地图传送相机更新失败", error, true); }
+    }
+
     public void OnGUI()
     {
         Plugin.GuiFrames++;
@@ -694,6 +703,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var enabled = GUI.enabled;
         var drawingNotice = false;
         var drawingFuture = false;
+        var drawingMapTeleport = false;
         var failed = false;
         try
         {
@@ -704,6 +714,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                 drawingNotice = false;
             }
             RuntimeDriver.ClearStaleHover(Indicators.HoveredButton);
+            drawingMapTeleport = true;
+            MapTeleportController.Draw();
+            drawingMapTeleport = false;
             if (CommandPanelState.Open) DrawCommandPanel();
             if (!futureRenderFailed && Plugin.EnableIndicators.Value && Plugin.IsDialogue && Indicators.HoveredButton != null && !string.IsNullOrEmpty(Indicators.HoverHint))
             {
@@ -716,6 +729,11 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             failed = true;
             if (drawingNotice) guiNoticeFailed = true;
             if (drawingFuture) futureRenderFailed = true;
+            if (drawingMapTeleport)
+            {
+                try { MapTeleportController.Close(string.Empty); }
+                catch { }
+            }
             CommandPanelState.Close();
             CheatEditor.ResetPreEditCheckpoint();
             Plugin.PanelNoteEditing = false;
@@ -725,8 +743,10 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             var firstFailure = guiFailurePolicy.RecordFailure();
             if (firstFailure || drawingFuture)
             {
-                Plugin.Logger.LogError((drawingFuture ? "悬停预览绘制异常，已停用该预览：" : "面板绘制异常，已关闭面板：") + error);
-                Plugin.Notice = drawingFuture
+                Plugin.Logger.LogError((drawingMapTeleport ? "地图传送标记绘制异常，已退出选择模式："
+                    : drawingFuture ? "悬停预览绘制异常，已停用该预览：" : "面板绘制异常，已关闭面板：") + error);
+                Plugin.Notice = drawingMapTeleport ? "地图传送标记绘制异常，已退出选择模式；详细错误已写入插件日志"
+                    : drawingFuture
                     ? "悬停预览绘制异常，该预览已停用；详细错误已写入插件日志"
                     : "面板绘制异常，已关闭；详细错误已写入插件日志";
                 Plugin.NoticeUntil = Time.realtimeSinceStartup + 8;

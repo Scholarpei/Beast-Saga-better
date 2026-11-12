@@ -20,7 +20,7 @@ public static class CheatSectionCatalog
         new CheatSectionInfo(CheatSection.Points, "点数", true),
         new CheatSectionInfo(CheatSection.Items, "物品", true),
         new CheatSectionInfo(CheatSection.Combat, "战斗", false, "第二批"),
-        new CheatSectionInfo(CheatSection.World, "世界", false, "第二批"),
+        new CheatSectionInfo(CheatSection.World, "世界", true),
         new CheatSectionInfo(CheatSection.Other, "其他", true)
     };
 
@@ -120,6 +120,9 @@ public static class CheatPointPolicy
 
 public static class CheatEditPolicy
 {
+    public static bool MapTransitionBlocked(bool initOver, bool teleporting, bool teleportUsed) =>
+        !initOver || teleporting;
+
     public static string? BlockReason(
         bool faulted,
         bool busy,
