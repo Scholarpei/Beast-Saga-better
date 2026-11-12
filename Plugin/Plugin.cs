@@ -261,7 +261,7 @@ public sealed partial class Plugin : BasePlugin
             var generation = Capture(CheckpointKind.Manual);
             Store.Select(generation);
             Tip("快速存档完成");
-            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration);
+            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration, CheatSessionState.ProtectedGeneration);
         }
         catch (Exception error) { Fail("保存失败，原读取目标保留", error, false); }
     }
@@ -317,7 +317,7 @@ public sealed partial class Plugin : BasePlugin
                 : title.Replace('\r', ' ').Replace('\n', ' ').Trim();
             if (conversation is { Length: > 120 }) conversation = conversation[..120];
             DialogueCheckpoint = Capture(CheckpointKind.PreDialogue, conversation);
-            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration);
+            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration, CheatSessionState.ProtectedGeneration);
             Logger.LogInfo("Pre-dialogue checkpoint: " + title + " / " + DialogueCheckpoint);
         }
         catch (Exception error) { Fail("对话前检查点未建立，本轮对话中 F5 不可用", error, false); }
@@ -342,6 +342,7 @@ public sealed partial class Plugin : BasePlugin
             if (Login._Instance == null || LoadMain._Instance == null) throw new InvalidOperationException("官方场景重载入口不可用");
             CommandPanelState.Close();
             ItemEditor.Reset("开始读档");
+            CheatEditor.ResetPreEditCheckpoint();
             PanelNoteEditing = false;
             Loading = true;
             LoadStarted = Time.realtimeSinceStartup;
@@ -362,6 +363,7 @@ public sealed partial class Plugin : BasePlugin
         if (!canShowPanel)
         {
             PanelNoteEditing = false;
+            CheatEditor.ResetPreEditCheckpoint();
             Tip(reason ?? "请在游戏中打开面板");
             return;
         }
@@ -383,6 +385,7 @@ public sealed partial class Plugin : BasePlugin
                 Loading = false;
                 PendingNativeLoad = false;
                 DialogueCheckpoint = null;
+                CheatEditor.ResetPreEditCheckpoint();
                 Tip("检查点读取完成");
             }
             else if (Time.realtimeSinceStartup - LoadStarted > 90)
@@ -599,6 +602,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
     public void OnDestroy()
     {
         ItemEditor.Reset("插件销毁");
+        CheatEditor.ResetPreEditCheckpoint();
         if (thumbnailTexture != null) UnityEngine.Object.Destroy(thumbnailTexture);
         thumbnailTexture = null;
         thumbnailGeneration = null;
@@ -646,6 +650,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                 }
                 CommandPanelState.Close();
                 ItemEditor.Reset("面板关闭");
+                CheatEditor.ResetPreEditCheckpoint();
                 Plugin.PanelNoteEditing = false;
                 return;
             }
@@ -712,6 +717,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             if (drawingNotice) guiNoticeFailed = true;
             if (drawingFuture) futureRenderFailed = true;
             CommandPanelState.Close();
+            CheatEditor.ResetPreEditCheckpoint();
             Plugin.PanelNoteEditing = false;
             Plugin.PanelNoteDraft = "";
             cheatCharacterMenuOpen = false;
@@ -807,6 +813,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         if (GUI.Button(closeRect, "关闭面板", panelHeaderButtonStyle!))
         {
             CommandPanelState.Open = false;
+            CheatEditor.ResetPreEditCheckpoint();
             Plugin.PanelNoteEditing = false;
         }
         var tabHeight = 38 * scale;

@@ -36,6 +36,13 @@ internal sealed record CheatPointsSnapshot(
     int TalentUsed,
     int TalentAvailable);
 
+internal readonly record struct PreEditCheckpointResult(bool CanWrite, string? Error)
+{
+    public static PreEditCheckpointResult Allow() => new(true, null);
+
+    public static PreEditCheckpointResult Block(string error) => new(false, error);
+}
+
 internal static class CheatEditor
 {
     internal static readonly (int Value, string Label)[] AttributeTypes =
@@ -347,25 +354,44 @@ internal static class CheatEditor
         return controller == null ? 0f : controller.speed / 4.5f;
     }
 
-    internal static string? EnsurePreEditCheckpoint()
+    internal static PreEditCheckpointResult EnsurePreEditCheckpoint()
     {
         var canOperate = Plugin.UnsafeReason(false) == null;
-        if (!CheatSessionState.TryBeginPreEditCheckpoint(Plugin.CheckpointsActive, canOperate)) return null;
-        if (!Plugin.CheckpointsActive || !canOperate) return null;
+        var existingGeneration = CheatSessionState.ProtectedGeneration;
+        if (existingGeneration != null)
+        {
+            try
+            {
+                NativeSave.Validate(Plugin.Store.Validate(existingGeneration));
+                return PreEditCheckpointResult.Allow();
+            }
+            catch (Exception error)
+            {
+                CheatSessionState.Reset();
+                Plugin.Logger.LogError("修改前检查点已失效：" + error);
+                return PreEditCheckpointResult.Block("修改前检查点已失效，本次修改未执行");
+            }
+        }
+
+        if (!CheatSessionState.TryBeginPreEditCheckpoint(Plugin.CheckpointsActive, canOperate, out var token))
+            return PreEditCheckpointResult.Allow();
+
         try
         {
             var generation = Plugin.Capture(CheckpointKind.Manual);
+            Plugin.Store.Select(generation);
             try { Plugin.Store.SetNote(generation, "修改前自动检查点"); }
             catch (Exception error) { Plugin.Logger.LogWarning("修改前检查点备注失败：" + error.Message); }
-            Plugin.Store.Select(generation);
             Plugin.RefreshPanelSelectedCheckpoint();
             Plugin.RefreshPanelArchive();
-            return null;
+            CheatSessionState.CompletePreEditCheckpoint(token, generation);
+            return PreEditCheckpointResult.Allow();
         }
         catch (Exception error)
         {
+            CheatSessionState.ReleaseFailedPreEditCheckpoint(token);
             Plugin.Logger.LogError("修改前检查点创建失败：" + error);
-            return "修改前检查点创建失败，本次修改未受检查点保护";
+            return PreEditCheckpointResult.Block("修改前检查点创建失败，本次修改未执行");
         }
     }
 

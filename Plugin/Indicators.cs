@@ -47,6 +47,11 @@ internal static class Indicators
                 {
                     var successExpression = $"{spec.Function}(\"{spec.Attribute}\",\"{spec.Operation}\",{spec.Threshold.ToString(System.Globalization.CultureInfo.InvariantCulture)}) == true";
                     var result = CheckPreview.Evaluate(successExpression, (function, attribute) => ReadValue(spec));
+                    if (result.Passed == true && spec.Function != "IsPlayerPro")
+                    {
+                        var nativeGain = Math.Truncate(spec.Threshold * 0.01);
+                        if (nativeGain > 0) result = result with { Text = result.Text + "；达标奖励：生活经验 " + spec.Attribute + " +" + FormatCount(nativeGain) };
+                    }
                     var suffix = spec.Function != "IsPlayerPro" && result.Passed != null ? "（含队友及说服修正）" : "";
                     lines.Add(result.Text + suffix);
                 }
@@ -125,9 +130,9 @@ internal static class Indicators
 
     private static List<string>? PreviewFuture(DialogueEntry entry)
     {
-        var paths = new List<(IReadOnlyList<FutureScriptEffect> Effects, IReadOnlyList<string> Stops)>();
+        var paths = new List<(IReadOnlyList<FutureScriptEffect> Effects, IReadOnlyList<string> Stops, bool Certain)>();
         {
-            var queue = new List<(DialogueEntry Node, List<FutureScriptEffect> Path, List<string> PathStops, HashSet<string> Visited)> { (entry, new(), new(), new()) };
+            var queue = new List<(DialogueEntry Node, List<FutureScriptEffect> Path, List<string> PathStops, HashSet<string> Visited, Dictionary<string, double> ItemCounts)> { (entry, new(), new(), new(), ReadInitialItemCounts()) };
             var explored = 0;
             var duplicateNodes = new HashSet<string>();
             while (queue.Count > 0 && paths.Count < 8 && explored < 48)
@@ -138,20 +143,20 @@ internal static class Indicators
                 if (current.Path.Count + current.PathStops.Count >= 64)
                 {
                     current.PathStops.Add("预测内容达到安全上限");
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, false));
                     continue;
                 }
                 var key = current.Node.conversationID + ":" + current.Node.id;
                 if (duplicateNodes.Contains(key) && key != entry.conversationID + ":" + entry.id && current.Path.Count > 0)
                 {
                     current.PathStops.Add("对话会回到已预测内容");
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, false));
                     continue;
                 }
                 if (!current.Visited.Add(key))
                 {
                     current.PathStops.Add(key == entry.conversationID + ":" + entry.id ? "可回溯" : "对话会回到已预测内容");
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, false));
                     continue;
                 }
                 var script = FutureScriptPreview.Parse(current.Node.userScript);
@@ -159,61 +164,71 @@ internal static class Indicators
                 if (script.StopReason != null)
                 {
                     current.PathStops.Add(script.StopReason);
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, true));
                     continue;
                 }
                 if (script.Effects.Any(effect => effect.Kind == "shop"))
                 {
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, true));
                     continue;
                 }
                 var battle = BattleSequencePattern.Match(current.Node.Sequence ?? "");
                 if (battle.Success)
                 {
                     current.PathStops.Add("进入战斗：" + battle.Groups["target"].Value.Trim() + "，后续不预测");
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, true));
                     continue;
                 }
                 var boundary = BoundaryStop(script.Effects);
                 if (boundary != null)
                 {
                     current.PathStops.Add(boundary);
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, true));
                     continue;
                 }
                 var links = current.Node.outgoingLinks;
                 if (links == null || links.Count == 0)
                 {
-                    paths.Add((current.Path, current.PathStops));
+                    paths.Add((current.Path, current.PathStops, true));
                     continue;
                 }
                 var successors = new List<DialogueEntry>();
+                var childItemCounts = new Dictionary<string, double>(current.ItemCounts);
+                ApplyItemEffects(childItemCounts, script.Effects);
+                var nativeCheckSpec = CheckPreview.Parse(current.Node.conditionsString ?? "");
+                if (nativeCheckSpec is { Function: "IsPlayerLife" or "IsPlayer2Life", Operation: "大于等于" } &&
+                    CheckPreview.Evaluate(current.Node.conditionsString!, (function, attribute) => ReadValue(nativeCheckSpec)).Passed == true)
+                {
+                    var nativeLifeGain = Math.Truncate(nativeCheckSpec.Threshold * 0.01);
+                    if (nativeLifeGain > 0) current.Path.Add(new FutureScriptEffect("life-exp", nativeCheckSpec.Attribute, nativeLifeGain));
+                }
                 foreach (var link in links)
                 {
                     var next = DialogueManager.masterDatabase?.GetDialogueEntry(link);
                     if (next == null || successors.Contains(next)) continue;
-                    if (!string.IsNullOrWhiteSpace(next.conditionsString) && !VariableConditionIsTrue(next.conditionsString)) continue;
+                    if (!string.IsNullOrWhiteSpace(next.conditionsString))
+                    {
+                        var checkSpec = CheckPreview.Parse(next.conditionsString);
+                        var itemSpec = CheckPreview.ParseItemCount(next.conditionsString);
+                        var visible = checkSpec != null
+                            ? CheckPreview.Evaluate(next.conditionsString, (function, attribute) => ReadValue(checkSpec)).Passed == true
+                            : itemSpec != null
+                                ? EvaluateExpected(itemSpec, childItemCounts)
+                                : VariableConditionIsTrue(next.conditionsString);
+                        if (visible != true) continue;
+                    }
                     successors.Add(next);
                 }
                 if (successors.Count == 0)
                 {
-                    var chosen = ChoosePairedItemCountSuccessor(EnumerateLinks(links));
-                    DialogueEntry? successPath = null;
-                    if (chosen != null)
-                    {
-                        foreach (var linkValue in links)
-                        {
-                            var next = DialogueManager.masterDatabase?.GetDialogueEntry((Link)linkValue);
-                            if (next != null && CheckPreview.ParseItemCount(next.conditionsString ?? "") is { Expected: true }) successPath = next;
-                        }
-                    }
+                    var chosen = ChoosePairedItemCountSuccessor(EnumerateLinks(links), childItemCounts);
                     if (chosen == null)
                     {
                         current.PathStops.Add(links.Count > 1 ? "后续有分支条件未知，未继续预测" : "后续条件未知，未继续预测");
-                        paths.Add((current.Path, current.PathStops));
+                        paths.Add((current.Path, current.PathStops, false));
                         continue;
                     }
-                    queue.Add((chosen, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited)));
+                    queue.Add((chosen, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited), new Dictionary<string, double>(childItemCounts)));
                     duplicateNodes.Add(chosen.conversationID + ":" + chosen.id);
                     continue;
                 }
@@ -223,12 +238,12 @@ internal static class Indicators
                 if (ancestorSuccessors.Count > 0) successors = ancestorSuccessors;
                 foreach (var next in successors)
                 {
-                    queue.Add((next, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited)));
+                    queue.Add((next, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited), new Dictionary<string, double>(childItemCounts)));
                     if (current.Visited.Contains(next.conversationID + ":" + next.id)) duplicateNodes.Add(next.conversationID + ":" + next.id);
                 }
                 continue;
             }
-            if (queue.Count > 0) paths.Add((new List<FutureScriptEffect>(), new List<string> { "预测路径达到安全上限" }));
+            if (queue.Count > 0) paths.Add((new List<FutureScriptEffect>(), new List<string> { "预测路径达到安全上限" }, false));
         }
         var lines = new List<string>();
         if (paths.Count == 1)
@@ -236,7 +251,11 @@ internal static class Indicators
             var path = paths[0];
             lines.AddRange(FormatEffects(path.Effects.ToList()));
             var quest = path.Effects.FirstOrDefault(effect => effect.Kind == "quest" && effect.Detail == "→ success");
-            if (quest != null) lines.Add("✓ 会完成任务：" + quest.Target);
+            if (quest != null && path.Certain)
+            {
+                if (!path.Stops.Any(stop => stop.Contains("未知", StringComparison.Ordinal)))
+                    lines.Add("✓ 会完成任务：" + quest.Target);
+            }
             lines.AddRange(path.Stops.Select(stop => stop.StartsWith('?') || stop.StartsWith("✓ ") || stop.StartsWith("✗ ") ? stop : "（" + stop + "）"));
         }
         else
@@ -283,7 +302,7 @@ internal static class Indicators
         return lines.Count == 0 ? null : lines;
     }
 
-    private static DialogueEntry? ChoosePairedItemCountSuccessor(System.Collections.IEnumerable links)
+    private static DialogueEntry? ChoosePairedItemCountSuccessor(System.Collections.IEnumerable links, IReadOnlyDictionary<string, double> itemCounts)
     {
         if (DialogueManager.masterDatabase == null) return null;
         var candidates = new List<DialogueEntry?>();
@@ -295,11 +314,27 @@ internal static class Indicators
         DialogueEntry? chosen = null;
         foreach (var next in candidates)
         {
-            var expected = EvaluateExpected(CheckPreview.ParseItemCount(next!.conditionsString ?? "")!);
+            var expected = EvaluateExpected(CheckPreview.ParseItemCount(next!.conditionsString ?? "")!, itemCounts);
             if (expected == null) return null;
             if (expected.Value) chosen = next;
         }
         return chosen;
+    }
+
+    private static void ApplyItemEffects(Dictionary<string, double> counts, IReadOnlyList<FutureScriptEffect> effects)
+    {
+        foreach (var effect in effects)
+        {
+            if (effect.Kind != "item") continue;
+            counts.TryGetValue(effect.Target, out var count);
+            counts[effect.Target] = count + effect.Amount;
+        }
+    }
+
+    private static Dictionary<string, double> ReadInitialItemCounts()
+    {
+        var counts = new Dictionary<string, double>(StringComparer.Ordinal);
+        return counts;
     }
 
     private static bool VariableConditionIsTrue(string expression)
@@ -482,7 +517,12 @@ internal static class Indicators
 
     private static bool? EvaluateExpected(ItemCountSpec spec)
     {
-        var current = ReadItemCount(spec.Item);
+        return EvaluateExpected(spec, null);
+    }
+
+    private static bool? EvaluateExpected(ItemCountSpec spec, IReadOnlyDictionary<string, double>? pathCounts)
+    {
+        double? current = pathCounts != null && pathCounts.TryGetValue(spec.Item, out var pathCount) ? pathCount : ReadItemCount(spec.Item);
         if (current is null || !double.IsFinite(current.Value)) return null;
         bool? passed = spec.Operation switch
         {
@@ -498,8 +538,14 @@ internal static class Indicators
     {
         var player = PlayerDataManager._Instance;
         if (player == null || player._PlayerData == null || !player._IsLoadOver) return null;
-        var count = player.ItemCount(item);
-        return count >= 0 ? count : null;
+        var dialogue = player.GetComponent<PlayerDialogue>();
+        if (dialogue == null) return null;
+        var bag = player.ItemCount(item);
+        var dressed = player.ItemDressCount(item);
+        var stored = dialogue.ChuCangIsHaveItemNum(item);
+        if (bag < 0 || dressed < 0 || stored < 0) return null;
+        var total = (long)bag + dressed + stored;
+        return total <= int.MaxValue ? total : null;
     }
 
     private static List<string> FormatEffects(List<FutureScriptEffect> effects)
@@ -581,9 +627,26 @@ internal static class Indicators
         if (player == null || player._PlayerData == null || !player._IsLoadOver) return null;
         if (spec.Function == "IsPlayerPro")
         {
-            if (spec.Attribute == "悟性") return player.GetWuXing();
-            if (AttributeTypes.TryGetValue(spec.Attribute, out var attributeType)) return player.GetPro((PlayerProType)attributeType);
-            return null;
+            if (spec.Attribute == "悟性")
+            {
+                var wisdom = player.GetWuXing();
+                if (wisdom >= spec.Threshold) return wisdom;
+                var friendManager = PlayerFriendDataManager._Instance;
+                if (friendManager == null || friendManager._FriendData == null || !friendManager._IsLoadOver) return null;
+                var friendNames = friendManager._FriendData.BattleFriend;
+                if (friendNames == null) return null;
+                foreach (var friendName in friendNames)
+                {
+                    if (string.IsNullOrEmpty(friendName)) return null;
+                    var friend = friendManager.GetFriend(friendName);
+                    if (friend == null) return null;
+                    if (friend._WuXing >= spec.Threshold) return friend._WuXing;
+                }
+                return wisdom;
+            }
+            if (!AttributeTypes.TryGetValue(spec.Attribute, out var attributeType)) return null;
+            var value = player.GetPro((PlayerProType)attributeType);
+            return value >= spec.Threshold ? value : Math.Max(value, FriendPro((PlayerProType)attributeType));
         }
         if (!LifeTypes.TryGetValue(spec.Attribute, out var lifeType) || spec.Threshold != Math.Truncate(spec.Threshold)) return null;
         var friends = PlayerFriendDataManager._Instance;
@@ -607,6 +670,25 @@ internal static class Indicators
             bonus = Math.Max(0, bonus);
         }
         return current + bonus;
+    }
+
+    private static int FriendPro(PlayerProType type)
+    {
+        var friends = PlayerFriendDataManager._Instance;
+        if (friends == null || friends._FriendData == null || !friends._IsLoadOver) return -1;
+        var battleFriends = friends._FriendData.BattleFriend;
+        if (battleFriends == null) return -1;
+        var maximum = -1;
+        foreach (var friendName in battleFriends)
+        {
+            if (string.IsNullOrEmpty(friendName)) return -1;
+            var friend = friends.GetFriend(friendName);
+            if (friend == null) return -1;
+            var value = friend.GetPro(type);
+            if (value < 0) return -1;
+            maximum = Math.Max(maximum, value);
+        }
+        return maximum;
     }
 }
 

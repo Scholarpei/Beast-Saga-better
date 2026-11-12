@@ -740,9 +740,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             SetCheatMessage("经验必须是大于 0 的整数");
             return;
         }
-        var warning = CheatEditor.EnsurePreEditCheckpoint();
+        if (!TryEnsurePreEditCheckpoint()) return;
         var ok = CheatEditor.AddPlayerExp(amount, out var message);
-        SetCheatMessage(CombineMessages(warning, message));
+        SetCheatMessage(message);
         if (ok)
         {
             cheatDrafts.Remove(id);
@@ -772,7 +772,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             SetCheatMessage("六维没有变化");
             return;
         }
-        var warning = CheatEditor.EnsurePreEditCheckpoint();
+        if (!TryEnsurePreEditCheckpoint()) return;
         var failures = new List<string>();
         foreach (var item in changed)
         {
@@ -788,8 +788,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                 failures.Add(message);
             }
         }
-        SetCheatMessage(CombineMessages(warning,
-            failures.Count == 0 ? $"已应用 {changed.Count} 项六维修改" : string.Join("；", failures)));
+        SetCheatMessage(failures.Count == 0 ? $"已应用 {changed.Count} 项六维修改" : string.Join("；", failures));
     }
 
     private void ApplyLevels(CheatCharacterOption option, CheatCharacterSnapshot snapshot, bool martial)
@@ -823,7 +822,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             SetCheatMessage((martial ? "武学" : "生活技能") + "没有变化");
             return;
         }
-        var warning = CheatEditor.EnsurePreEditCheckpoint();
+        if (!TryEnsurePreEditCheckpoint()) return;
         var failures = new List<string>();
         foreach (var item in changed)
         {
@@ -842,8 +841,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                 failures.Add(message);
             }
         }
-        SetCheatMessage(CombineMessages(warning,
-            failures.Count == 0 ? $"已应用 {changed.Count} 项{(martial ? "武学" : "生活技能")}修改" : string.Join("；", failures)));
+        SetCheatMessage(failures.Count == 0 ? $"已应用 {changed.Count} 项{(martial ? "武学" : "生活技能")}修改" : string.Join("；", failures));
     }
 
     private void ApplyFavor(CheatCharacterOption option, float sign)
@@ -855,9 +853,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             SetCheatMessage("好感变化必须是大于 0 的数字");
             return;
         }
-        var warning = CheatEditor.EnsurePreEditCheckpoint();
+        if (!TryEnsurePreEditCheckpoint()) return;
         var ok = CheatEditor.AddFavor(option, sign * amount, out var message);
-        SetCheatMessage(CombineMessages(warning, message));
+        SetCheatMessage(message);
         if (ok)
         {
             cheatDrafts.Remove(id);
@@ -874,9 +872,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             SetCheatMessage("点数必须是大于 0 的整数");
             return;
         }
-        var warning = CheatEditor.EnsurePreEditCheckpoint();
+        if (!TryEnsurePreEditCheckpoint()) return;
         var ok = CheatEditor.AddPoints(pool, sign * amount, out var message);
-        SetCheatMessage(CombineMessages(warning, message));
+        SetCheatMessage(message);
         if (ok)
         {
             cheatDrafts.Remove(id);
@@ -893,9 +891,9 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             SetCheatMessage("可用点数不能小于 0");
             return;
         }
-        var warning = CheatEditor.EnsurePreEditCheckpoint();
+        if (!TryEnsurePreEditCheckpoint()) return;
         var ok = CheatEditor.SetAvailablePoints(pool, amount, out var message);
-        SetCheatMessage(CombineMessages(warning, message));
+        SetCheatMessage(message);
         if (ok)
         {
             cheatDrafts.Remove(id);
@@ -920,8 +918,13 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         }
     }
 
-    private static string CombineMessages(string? warning, string message) =>
-        warning is null ? message : warning + "；" + message;
+    private bool TryEnsurePreEditCheckpoint()
+    {
+        var protection = CheatEditor.EnsurePreEditCheckpoint();
+        if (protection.CanWrite) return true;
+        SetCheatMessage(protection.Error ?? "修改前检查点不可用，本次修改未执行");
+        return false;
+    }
 
     private static string StatDraftId(CheatCharacterOption option, int type) =>
         "char:" + option.Key + ":stat:" + type;

@@ -26,7 +26,7 @@ try
 {
     Test("iron plate option predicts the item beyond its inventory visibility condition", () =>
     {
-        var option = new DialogueEntry { conversationID = 2, id = 2581, conditionsString = "(IsPlayerItemCount('3铁布衫图纸','大于等于',1)==false) and (IsHaveMake('3铁布衫配方')==false)" };
+        IndicatorHarness.ResetIndicatorState();        var option = new DialogueEntry { conversationID = 2, id = 2581, conditionsString = "(IsPlayerItemCount('3铁布衫图纸','大于等于',1)==false) and (IsHaveMake('3铁布衫配方')==false)" };
         var node = option;
         for (var index = 0; index < 5; index++)
         {
@@ -40,7 +40,7 @@ try
     });
     Test("axe option predicts consumption and stops before choosing a weapon", () =>
     {
-        var option = new DialogueEntry { id = 891, conditionsString = "IsPlayerItemCount('全村最好的斧子','大于等于',1)==true" };
+        IndicatorHarness.ResetIndicatorState();        var option = new DialogueEntry { id = 891, conditionsString = "IsPlayerItemCount('全村最好的斧子','大于等于',1)==true" };
         var consume = new DialogueEntry { id = 892, userScript = "AwardItem('全村最好的斧子', -1)" };
         option.outgoingLinks.Add(new Link(consume));
         var choose = new DialogueEntry { id = 899 };
@@ -64,7 +64,7 @@ try
     });
     Test("visual-only sequencer still exposes later branch rewards", () =>
     {
-        var entry = new DialogueEntry { id = 903 };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { id = 903 };
         entry.outgoingLinks.Add(new Link(new DialogueEntry
         {
             id = 904,
@@ -76,7 +76,7 @@ try
     });
     Test("a return option is marked backtrack without opening sibling branches", () =>
     {
-        var reconsider = new DialogueEntry { id = 924 };
+        IndicatorHarness.ResetIndicatorState();        var reconsider = new DialogueEntry { id = 924 };
         var choose = new DialogueEntry { id = 899 };
         reconsider.outgoingLinks.Add(new Link(choose));
         choose.outgoingLinks.Add(new Link(reconsider));
@@ -87,30 +87,30 @@ try
     });
     Test("item names use native rank colors", () =>
     {
-        var hint = Indicators.Hint(new DialogueEntry { userScript = "AwardItem('1铁矿',3); AwardEquip('2铸铁剑',1)" });
+        IndicatorHarness.ResetIndicatorState();        var hint = Indicators.Hint(new DialogueEntry { userScript = "AwardItem('1铁矿',3); AwardEquip('2铸铁剑',1)" });
         Require(hint.Contains("<color=#") && hint.Contains(">1铁矿</color>") && hint.Contains(">2铸铁剑</color>"), hint);
     });
     Test("affection variables and sequential item effects are previewed without treating flags as love", () =>
     {
-        var entry = new DialogueEntry { userScript = "Variable['阿离的好感度'] = Variable['阿离的好感度'] - 2;\nVariable['猫花来好感度30事件已完成'] = true;\nAwardItem('铜钱', 500)" };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { userScript = "Variable['阿离的好感度'] = Variable['阿离的好感度'] - 2;\nVariable['猫花来好感度30事件已完成'] = true;\nAwardItem('铜钱', 500)" };
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("好感：阿离的好感度 -2") && hint.Contains("获得：铜钱 ×500") && !hint.Contains("事件已完成"), hint);
     });
     Test("unknown control flow never leaks a conditional reward", () =>
     {
-        var entry = new DialogueEntry { userScript = "if Mystery() then AwardItem('宝物',1) end" };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { userScript = "if Mystery() then AwardItem('宝物',1) end" };
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("后续脚本未知") && !hint.Contains("宝物"), hint);
     });
     Test("unknown call preserves earlier effects and hides later rewards", () =>
     {
-        var entry = new DialogueEntry { userScript = "AwardItem('铜钱', -5); Mystery(); AwardItem('宝物',1)" };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { userScript = "AwardItem('铜钱', -5); Mystery(); AwardItem('宝物',1)" };
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("失去：铜钱 ×5") && hint.Contains("后续脚本未知") && !hint.Contains("宝物"), hint);
     });
     Test("merchant shop scripts are predicted instead of reported unknown", () =>
     {
-        var askTeacher = new DialogueEntry { id = 1274 };
+        IndicatorHarness.ResetIndicatorState();        var askTeacher = new DialogueEntry { id = 1274 };
         var reply = new DialogueEntry { id = 1275 };
         var shop = new DialogueEntry { id = 2610, userScript = "OpenShop(\"狸子的书坊\")" };
         askTeacher.outgoingLinks.Add(new Link(reply));
@@ -121,22 +121,22 @@ try
     });
     Test("shop opening stops prediction at the shop boundary", () =>
     {
-        var shop = new DialogueEntry { id = 2610, userScript = "OpenShop(\"狸子的书坊\")" };
+        IndicatorHarness.ResetIndicatorState();        var shop = new DialogueEntry { id = 2610, userScript = "OpenShop(\"狸子的书坊\")" };
         shop.outgoingLinks.Add(new Link(new DialogueEntry { id = 2611, userScript = "AwardItem('宝物', 1)" }));
         var hint = Indicators.Hint(shop);
         Require(hint.Contains("打开商店：狸子的书坊") && !hint.Contains("宝物") && !hint.Contains("后续脚本未知"), hint);
     });
     Test("future conditional node does not claim its reward", () =>
     {
-        var entry = new DialogueEntry();
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry();
         entry.outgoingLinks.Add(new Link(new DialogueEntry { conditionsString = "Mystery()", userScript = "AwardItem('宝物',1)" }));
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("后续条件未知") && !hint.Contains("宝物"), hint);
     });
     Test("single variable-gated option predicts its real future", () =>
     {
-        DialogueVariableState.Reset();
-        DialogueVariableState.Variables["花铺老板的孩子"] = "0";
+        IndicatorHarness.ResetIndicatorState();        IndicatorHarness.DialogueVariableState.Reset();
+        IndicatorHarness.DialogueVariableState.Variables["花铺老板的孩子"] = "0";
         var option = new DialogueEntry { id = 619 };
         var answer = new DialogueEntry { id = 622 };
         var confirmation = new DialogueEntry
@@ -156,11 +156,11 @@ try
         Require(hint.Contains("任务：支线命值几钱 → active"), hint);
         Require(hint.Contains("任务：支线命值几钱 第1步 → active"), hint);
         Require(!hint.Contains("后续条件未知"), hint);
-        Require(DialogueVariableState.Reads == 1, DialogueVariableState.Reads.ToString());
+        Require(IndicatorHarness.DialogueVariableState.Reads == 1, IndicatorHarness.DialogueVariableState.Reads.ToString());
     });
     Test("unknown variable value still stops before leaking rewards", () =>
     {
-        DialogueVariableState.Reset();
+        IndicatorHarness.ResetIndicatorState();        IndicatorHarness.DialogueVariableState.Reset();
         var option = new DialogueEntry { id = 619 };
         var confirmation = new DialogueEntry
         {
@@ -175,8 +175,8 @@ try
     });
     Test("mutually exclusive variable states continue through the only visible option", () =>
     {
-        DialogueVariableState.Reset();
-        DialogueVariableState.Variables["密室的状态"] = "1";
+        IndicatorHarness.ResetIndicatorState();        IndicatorHarness.DialogueVariableState.Reset();
+        IndicatorHarness.DialogueVariableState.Variables["密室的状态"] = "1";
         var option = new DialogueEntry { id = 2748 };
         var question = new DialogueEntry { id = 2749 };
         var deadA = new DialogueEntry
@@ -209,7 +209,7 @@ try
     });
     Test("unknown disjunction still stops before conditional rewards", () =>
     {
-        DialogueVariableState.Reset();
+        IndicatorHarness.ResetIndicatorState();        IndicatorHarness.DialogueVariableState.Reset();
         var option = new DialogueEntry { id = 2748 };
         var gate = new DialogueEntry
         {
@@ -224,14 +224,14 @@ try
     });
     Test("cycles terminate and never multiply the same reward", () =>
     {
-        var entry = new DialogueEntry { userScript = "AwardItem('铜钱',1)" };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { userScript = "AwardItem('铜钱',1)" };
         entry.outgoingLinks.Add(new Link(entry));
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("可回溯") && hint.Split("获得").Length == 2, hint);
     });
     Test("first rendered craft option shows its check before selection", () =>
     {
-        var button = new StandardUIResponseButton();
+        IndicatorHarness.ResetIndicatorState();        var button = new StandardUIResponseButton();
         IndicatorHarness.Render(button, IndicatorHarness.CraftOption());
         Require(button.text == "3.仿造戒指（判定：巧艺20）", button.text);
         Require(Indicators.HoveredButton == button, "hover button was not cached");
@@ -239,7 +239,7 @@ try
     });
     Test("reused response button cannot preview the previous option", () =>
     {
-        var button = new StandardUIResponseButton
+        IndicatorHarness.ResetIndicatorState();        var button = new StandardUIResponseButton
         {
             response = new Response { destinationEntry = new DialogueEntry { conditionsString = "IsPlayerPro('感知','大于等于',5)" } }
         };
@@ -248,13 +248,13 @@ try
     });
     Test("ordinary option stays unmarked when a checked button is reused", () =>
     {
-        var button = new StandardUIResponseButton { response = IndicatorHarness.CraftOption() };
+        IndicatorHarness.ResetIndicatorState();        var button = new StandardUIResponseButton { response = IndicatorHarness.CraftOption() };
         IndicatorHarness.Render(button, new Response { formattedText = new FormattedText { text = "离开" } });
         Require(button.text == "3.离开" && Indicators.HoverHint == "", button.text + "|" + Indicators.HoverHint);
     });
     Test("leaving or hiding a response clears its hover preview", () =>
     {
-        var button = new StandardUIResponseButton();
+        IndicatorHarness.ResetIndicatorState();        var button = new StandardUIResponseButton();
         IndicatorHarness.Render(button, IndicatorHarness.CraftOption());
         IndicatorHarness.Leave(button);
         Require(Indicators.HoveredButton == null && Indicators.HoverHint == "");
@@ -265,7 +265,7 @@ try
     });
     Test("hover preview uses the current button response only", () =>
     {
-        var button = new StandardUIResponseButton();
+        IndicatorHarness.ResetIndicatorState();        var button = new StandardUIResponseButton();
         IndicatorHarness.Render(button, IndicatorHarness.CraftOption());
         IndicatorHarness.Hover(button, new Response { formattedText = new FormattedText { text = "离开" } });
         Require(Indicators.HoverHint == "", Indicators.HoverHint);
@@ -275,14 +275,14 @@ try
     });
     Test("clicking a response immediately closes its hover preview", () =>
     {
-        var button = new StandardUIResponseButton();
+        IndicatorHarness.ResetIndicatorState();        var button = new StandardUIResponseButton();
         IndicatorHarness.Render(button, IndicatorHarness.CraftOption());
         IndicatorHarness.Click(button);
         Require(Indicators.HoveredButton == null && Indicators.HoverHint == "");
     });
     Test("future preview presentation separates categories", () =>
     {
-        var lines = new[]
+        IndicatorHarness.ResetIndicatorState();        var lines = new[]
         {
             "预测未来",
             "✗ 巧艺 10 ≥ 20",
@@ -316,7 +316,7 @@ try
     });
     Test("quest state previews name the quest once", () =>
     {
-        var entry = new DialogueEntry
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry
         {
             userScript = "SetQuestState(\"打铁教程\", \"active\");\nSetQuestEntryState(\"打铁教程\", 1, \"active\");\nAwardItem('1粗铁锭图纸', 1); AwardItem('1铁矿', 3)"
         };
@@ -327,7 +327,7 @@ try
     });
     Test("priority-one boundaries stop future traversal", () =>
     {
-        var save = new DialogueEntry { id = 1, userScript = "SaveData()" };
+        IndicatorHarness.ResetIndicatorState();        var save = new DialogueEntry { id = 1, userScript = "SaveData()" };
         var battle = new DialogueEntry
         {
             id = 2,
@@ -344,7 +344,7 @@ try
     });
     Test("map transition is reported and stops traversal", () =>
     {
-        var entry = new DialogueEntry { id = 1, userScript = "AwardItem('铜钱',100); GoOtherMap('黑市')" };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { id = 1, userScript = "AwardItem('铜钱',100); GoOtherMap('黑市')" };
         entry.outgoingLinks.Add(new Link(new DialogueEntry { id = 2, userScript = "AwardItem('宝物',1)" }));
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("获得：铜钱 ×100") && hint.Contains("（切换地图：黑市，后续不预测）"), hint);
@@ -352,7 +352,7 @@ try
     });
     Test("parameterless map transitions still show later script effects", () =>
     {
-        var entry = new DialogueEntry { id = 1, userScript = "GoCanOtherMap(); AwardPro('悟性',1)" };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { id = 1, userScript = "GoCanOtherMap(); AwardPro('悟性',1)" };
         entry.outgoingLinks.Add(new Link(new DialogueEntry { id = 2, userScript = "AwardItem('宝物',1)" }));
         var hint = Indicators.Hint(entry);
         Require(hint.Contains("悟性 +1") && hint.Contains("（切换地图（目标未知），后续不预测）"), hint);
@@ -360,7 +360,7 @@ try
     });
     Test("party and progression effects are previewed", () =>
     {
-        var script = string.Join("\n", new[]
+        IndicatorHarness.ResetIndicatorState();        var script = string.Join("\n", new[]
         {
             "AwardItem('铜钱',100)",
             "AwardExp(600)",
@@ -390,7 +390,7 @@ try
     });
     Test("quest stage changes show exact new states", () =>
     {
-        var script = "SetQuestState(\"打铁教程\", \"success\");\nSetQuestEntryState(\"打铁教程\", 2, \"active\");\nSetQuestEntryState(\"打铁教程\", 3, \"success\")";
+        IndicatorHarness.ResetIndicatorState();        var script = "SetQuestState(\"打铁教程\", \"success\");\nSetQuestEntryState(\"打铁教程\", 2, \"active\");\nSetQuestEntryState(\"打铁教程\", 3, \"success\")";
         var hint = Indicators.Hint(new DialogueEntry { userScript = script });
         Require(hint.Contains("任务：打铁教程 → success"), hint);
         Require(hint.Contains("任务：打铁教程 第2步 → active"), hint);
@@ -398,7 +398,7 @@ try
     });
     Test("item submission marks whether the quest completes", () =>
     {
-        PlayerDataManager._Instance.ItemCounts["2纯铁矿"] = 3;
+        IndicatorHarness.ResetIndicatorState();        PlayerDataManager._Instance.ItemCounts["2纯铁矿"] = 3;
         var option = new DialogueEntry
         {
             id = 885,
@@ -438,7 +438,7 @@ try
     });
     Test("insufficient items show completion as unavailable", () =>
     {
-        PlayerDataManager._Instance.ItemCounts["2纯铁矿"] = 2;
+        IndicatorHarness.ResetIndicatorState();        PlayerDataManager._Instance.ItemCounts["2纯铁矿"] = 2;
         var option = new DialogueEntry
         {
             id = 885,
@@ -460,9 +460,101 @@ try
         Require(hint.Contains("✗ 本次不会完成任务：采集纯铁矿"), hint);
         Require(!hint.Contains("失去：2纯铁矿") && !hint.Contains("5光棍图纸"), hint);
     });
+    Test("path item awards feed later paired item checks", () =>
+    {
+        IndicatorHarness.ResetIndicatorState();        PlayerDataManager._Instance.Dialogue = new PlayerDialogue();
+        PlayerDataManager._Instance.ItemCounts.Clear();
+        var option = new DialogueEntry { id = 1 };
+        var award = new DialogueEntry { id = 2, userScript = "AwardItem(\"宝库钥匙\", 1)" };
+        var pass = new DialogueEntry { id = 3, conditionsString = "IsPlayerItemCount(\"宝库钥匙\", \"大于等于\", 1) == true" };
+        var fail = new DialogueEntry { id = 4, conditionsString = "IsPlayerItemCount(\"宝库钥匙\", \"大于等于\", 1) == false" };
+        var reward = new DialogueEntry { id = 5, userScript = "AwardItem(\"宝物\", 1)" };
+        option.outgoingLinks.Add(new Link(award));
+        award.outgoingLinks.Add(new Link(pass));
+        award.outgoingLinks.Add(new Link(fail));
+        pass.outgoingLinks.Add(new Link(reward));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("获得：宝库钥匙 ×1") && hint.Contains("获得：宝物 ×1"), hint);
+    });
+    Test("native item totals include worn and stored items", () =>
+    {
+        IndicatorHarness.ResetIndicatorState();        PlayerDataManager._Instance.ItemCounts.Clear();
+        PlayerDataManager._Instance.DressedItemCounts.Clear();
+        PlayerDataManager._Instance.Dialogue = new PlayerDialogue();
+        PlayerDataManager._Instance.ItemCounts["宝库钥匙"] = 1;
+        PlayerDataManager._Instance.DressedItemCounts["宝库钥匙"] = 1;
+        PlayerDataManager._Instance.Dialogue.StoredItemCounts["宝库钥匙"] = 1;
+        var option = new DialogueEntry { id = 1 };
+        var pass = new DialogueEntry { id = 2, conditionsString = "IsPlayerItemCount(\"宝库钥匙\", \"大于等于\", 3) == true" };
+        var fail = new DialogueEntry { id = 3, conditionsString = "IsPlayerItemCount(\"宝库钥匙\", \"大于等于\", 3) == false" };
+        var reward = new DialogueEntry { id = 4, userScript = "AwardItem(\"宝物\", 1)" };
+        option.outgoingLinks.Add(new Link(pass));
+        option.outgoingLinks.Add(new Link(fail));
+        pass.outgoingLinks.Add(new Link(reward));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("✓ 宝库钥匙 3 ≥ 3") && hint.Contains("获得：宝物 ×1"), hint);
+    });
+    Test("unknown frontier never reports a definite quest conclusion", () =>
+    {
+        IndicatorHarness.ResetIndicatorState();        var option = new DialogueEntry
+        {
+            id = 1,
+            userScript = "SetQuestState(\"未知任务\", \"success\");\nUnknownScript()"
+        };
+        var reward = new DialogueEntry { id = 2, userScript = "AwardItem(\"隐藏宝物\", 1)" };
+        option.outgoingLinks.Add(new Link(reward));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("后续脚本未知") && !hint.Contains("✓ 会完成任务"), hint);
+    });
+    Test("variable constant assignment truncates later treasure prediction", () =>
+    {
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry
+        {
+            id = 1,
+            userScript = "Variable[\"状态\"] = 1;\nAwardItem(\"宝物\", 1)"
+        };
+        var later = new DialogueEntry { id = 2, userScript = "AwardItem(\"隐藏宝物\", 1)" };
+        entry.outgoingLinks.Add(new Link(later));
+        var hint = Indicators.Hint(entry);
+        Require(hint.Contains("剧情变量赋值后，后续状态未知") && !hint.Contains("隐藏宝物"), hint);
+    });
+    Test("attribute checks fall back to battle friends", () =>
+    {
+        PlayerDataManager._Instance.ProValues.Clear();
+        var option = new DialogueEntry { id = 1 };
+        var pass = new DialogueEntry { id = 2, conditionsString = "IsPlayerPro(\"力道\", \"大于等于\", 15) == true" };
+        var fail = new DialogueEntry { id = 3, conditionsString = "IsPlayerPro(\"力道\", \"大于等于\", 15) == false" };
+        var reward = new DialogueEntry { id = 4, userScript = "AwardItem(\"宝物\", 1)" };
+        PlayerFriendDataManager._Instance._FriendData.BattleFriend.Clear();
+        PlayerFriendDataManager._Instance.Friends.Clear();
+        PlayerFriendDataManager._Instance._FriendData.BattleFriend.Add("狐二靖");
+        PlayerFriendDataManager._Instance.Friends["狐二靖"] = new Friend { ProValues = { 20 } };
+        option.outgoingLinks.Add(new Link(pass));
+        option.outgoingLinks.Add(new Link(fail));
+        pass.outgoingLinks.Add(new Link(reward));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("✓ 力道 20 ≥ 15") && hint.Contains("获得：宝物 ×1"), hint);
+    });
+    Test("successful life threshold previews native level-up experience", () =>
+    {
+        IndicatorHarness.ResetIndicatorState();        PlayerDataManager._Instance.LifeValues.Clear();
+        PlayerDataManager._Instance.LifeValues.Add(200);
+        var option = new DialogueEntry { id = 1 };
+        var pass = new DialogueEntry
+        {
+            id = 2,
+            conditionsString = "IsPlayerLife(\"说服\", \"大于等于\", 200) == true",
+            userScript = "AwardLifeExp(\"说服\", 200)"
+        };
+        var fail = new DialogueEntry { id = 3, conditionsString = "IsPlayerLife(\"说服\", \"大于等于\", 200) == false" };
+        option.outgoingLinks.Add(new Link(pass));
+        option.outgoingLinks.Add(new Link(fail));
+        var hint = Indicators.Hint(option);
+        Require(hint.Contains("达标奖励：生活经验 说服 +2"), hint);
+    });
     Test("equivalent crafting options retain their reward beside one backtrack", () =>
     {
-        var selector = new DialogueEntry { id = 899 };
+        IndicatorHarness.ResetIndicatorState();        var selector = new DialogueEntry { id = 899 };
         var reconsider = new DialogueEntry { id = 924 };
         reconsider.outgoingLinks.Add(new Link(selector));
         var choices = new[]
@@ -501,7 +593,7 @@ try
     });
     Test("real chapter transition combines quest stages progression and map boundary", () =>
     {
-        var result = FutureScriptPreview.Parse("SetQuestEntryState(\"第一章\", 24, \"success\");\nSetQuestEntryState(\"第一章\", 25, \"active\");\nGoCanOtherMap();\nAwardExp(3000);\nAwardPro(\"悟性\", 1)");
+        IndicatorHarness.ResetIndicatorState();        var result = FutureScriptPreview.Parse("SetQuestEntryState(\"第一章\", 24, \"success\");\nSetQuestEntryState(\"第一章\", 25, \"active\");\nGoCanOtherMap();\nAwardExp(3000);\nAwardPro(\"悟性\", 1)");
         Require(result.StopReason is null, result.StopReason ?? "");
         Require(result.Effects.Count == 5, result.Effects.Count.ToString());
         Require(result.Effects[0] is { Kind: "quest", Target: "第一章", Detail: "第24步 → success" });
@@ -516,7 +608,7 @@ try
     });
     Test("real party kungfu transfer combines affection item and friend reward", () =>
     {
-        var script = "AddFriendLoveNum(\"猴千冲\", 1);\nAwardItem(\"4大力金刚掌\", -1);\nAwardFriendKongFu(\"猴千冲\", \"4大力金刚掌\")";
+        IndicatorHarness.ResetIndicatorState();        var script = "AddFriendLoveNum(\"猴千冲\", 1);\nAwardItem(\"4大力金刚掌\", -1);\nAwardFriendKongFu(\"猴千冲\", \"4大力金刚掌\")";
         var result = FutureScriptPreview.Parse(script);
         Require(result.StopReason is null && result.Effects.Count == 3, result.StopReason ?? result.Effects.Count.ToString());
         Require(result.Effects[0] is { Kind: "love", Target: "猴千冲", Amount: 1 });
@@ -527,7 +619,7 @@ try
     });
     Test("real martial level flow is not reported as direct experience", () =>
     {
-        var result = FutureScriptPreview.Parse("AwardWuXueExp(\"掌\", 39, 60)");
+        IndicatorHarness.ResetIndicatorState();        var result = FutureScriptPreview.Parse("AwardWuXueExp(\"掌\", 39, 60)");
         Require(result.StopReason is null && result.Effects.Count == 1, result.StopReason ?? result.Effects.Count.ToString());
         Require(result.Effects[0] is { Kind: "martial-flow", Target: "掌", Detail: "39 → 60" });
         var hint = Indicators.Hint(new DialogueEntry { userScript = "AwardWuXueExp(\"掌\", 39, 60)" });
@@ -535,7 +627,7 @@ try
     });
     Test("real persuasion reward still previews after its check", () =>
     {
-        var option = new DialogueEntry { id = 1 };
+        IndicatorHarness.ResetIndicatorState();        var option = new DialogueEntry { id = 1 };
         var pass = new DialogueEntry { id = 2, conditionsString = "IsPlayerLife(\"说服\", \"大于等于\", 20)  == true", userScript = "AwardLifeExp(\"说服\", 200)" };
         var fail = new DialogueEntry { id = 3, conditionsString = "IsPlayerLife(\"说服\", \"大于等于\", 20)  == false" };
         option.outgoingLinks.Add(new Link(pass));
@@ -546,7 +638,7 @@ try
     });
     Test("real battle sequence stops without leaking later rewards", () =>
     {
-        var entry = new DialogueEntry { id = 1, userScript = "AwardItem(\"铜钱\",100)" };
+        IndicatorHarness.ResetIndicatorState();        var entry = new DialogueEntry { id = 1, userScript = "AwardItem(\"铜钱\",100)" };
         var battle = new DialogueEntry
         {
             id = 2,
@@ -565,7 +657,7 @@ try
         Require(File.ReadAllText(Path.Combine(path, "save.es3")) == "complete-save"));
     Test("generation is validated before it can be selected", () =>
     {
-        var generation = Create();
+        IndicatorHarness.ResetIndicatorState();        var generation = Create();
         Require(store.Selected() is null);
         store.Select(generation);
         Require(store.Selected() == generation);
@@ -573,20 +665,20 @@ try
     });
     Test("interrupted writer preserves the previous read target", () =>
     {
-        var selected = store.Selected();
+        IndicatorHarness.ResetIndicatorState();        var selected = store.Selected();
         Reject(() => store.Create(path => { File.WriteAllText(Path.Combine(path, "save.es3"), "partial"); throw new IOException("disk full"); }, _ => { }));
         Require(store.Selected() == selected);
         Require(Directory.GetDirectories(root).All(path => !path.EndsWith(".pending")));
     });
     Test("failed validation never publishes a generation", () =>
     {
-        var before = Directory.GetDirectories(root).Length;
+        IndicatorHarness.ResetIndicatorState();        var before = Directory.GetDirectories(root).Length;
         Reject(() => store.Create(path => File.WriteAllText(Path.Combine(path, "save.es3"), "invalid"), _ => throw new InvalidDataException("missing player")));
         Require(before == Directory.GetDirectories(root).Length);
     });
     Test("modified payload cannot become the read target", () =>
     {
-        var selected = store.Selected();
+        IndicatorHarness.ResetIndicatorState();        var selected = store.Selected();
         var generation = Create();
         File.AppendAllText(Path.Combine(root, generation, "save.es3"), "tampered");
         Reject(() => store.Select(generation));
@@ -594,19 +686,19 @@ try
     });
     Test("missing payload blocks reading without falling back", () =>
     {
-        var generation = Create(); store.Select(generation);
+        IndicatorHarness.ResetIndicatorState();        var generation = Create(); store.Select(generation);
         File.Delete(Path.Combine(root, generation, "save.es3"));
         Reject(() => store.Selected());
     });
     Test("other game versions cannot read a checkpoint", () =>
     {
-        var generation = Create();
+        IndicatorHarness.ResetIndicatorState();        var generation = Create();
         Reject(() => new CheckpointStore(root, "v2").Select(generation));
     });
     Test("generation path traversal is rejected", () => Reject(() => store.Validate("../outside")));
     Test("pure attribute comparison reports pass", () =>
     {
-        var result = CheckPreview.Evaluate("IsPlayerPro(\"感知\", \"大于等于\", 15) == true", (_, _) => 18);
+        IndicatorHarness.ResetIndicatorState();        var result = CheckPreview.Evaluate("IsPlayerPro(\"感知\", \"大于等于\", 15) == true", (_, _) => 18);
         Require(result.Passed == true && result.Text.Contains("18") && result.Text.Contains("15"));
     });
     Test("false branch is interpreted correctly", () =>
@@ -615,7 +707,7 @@ try
         Require(CheckPreview.Evaluate("IsPlayerLife('说服', '大于等于', 60) == true", (_, _) => 70).Passed == true));
     Test("unknown compound expression does not read or execute anything", () =>
     {
-        var reads = 0;
+        IndicatorHarness.ResetIndicatorState();        var reads = 0;
         var result = CheckPreview.Evaluate("IsPlayerPro('感知','大于等于',15) and AwardExp(100)", (_, _) => { reads++; return 18; });
         Require(result.Passed is null && reads == 0);
     });
@@ -631,7 +723,7 @@ try
         Require(!SafetyPolicy.CanOperate(false, true)));
     Test("production operation requires config and authorization marker", () =>
     {
-        Require(!SafetyPolicy.CanOperate(false, true, false));
+        IndicatorHarness.ResetIndicatorState();        Require(!SafetyPolicy.CanOperate(false, true, false));
         Require(!SafetyPolicy.CanOperate(false, false, true));
         Require(SafetyPolicy.CanOperate(false, true, true));
     });
@@ -651,7 +743,7 @@ try
         Require(SafetyPolicy.Route(false, false, false, 2) == LoadRoute.Original));
     Test("continue requests are ignored while a native load is pending", () =>
     {
-        Require(LoadRequestPolicy.AllowContinue(true, false, false, 0));
+        IndicatorHarness.ResetIndicatorState();        Require(LoadRequestPolicy.AllowContinue(true, false, false, 0));
         Require(!LoadRequestPolicy.AllowContinue(true, true, false, 0.5f));
         Require(!LoadRequestPolicy.AllowContinue(true, true, true, 0.5f));
         Require(!LoadRequestPolicy.AllowContinue(true, false, true, 0.5f));
@@ -660,7 +752,7 @@ try
     });
     Test("continue stays blocked until the menu transition and button are ready", () =>
     {
-        Require(LoadRequestPolicy.MenuReady(true, false, true, true, true));
+        IndicatorHarness.ResetIndicatorState();        Require(LoadRequestPolicy.MenuReady(true, false, true, true, true));
         Require(!LoadRequestPolicy.MenuReady(false, false, true, true, true));
         Require(!LoadRequestPolicy.MenuReady(true, true, true, true, true));
         Require(!LoadRequestPolicy.MenuReady(true, false, false, true, true));
@@ -669,7 +761,7 @@ try
     });
     Test("panel toggles only while the game is focused and no field accepts text", () =>
     {
-        CommandPanelState.Open = false;
+        IndicatorHarness.ResetIndicatorState();        CommandPanelState.Open = false;
         CommandPanelState.Toggle(true, false);
         Require(CommandPanelState.Open);
         CommandPanelState.Toggle(true, false);
@@ -681,7 +773,7 @@ try
     });
     Test("panel stays closed outside gameplay and the menu reports guidance", () =>
     {
-        CommandPanelState.Open = false;
+        IndicatorHarness.ResetIndicatorState();        CommandPanelState.Open = false;
         CommandPanelState.Toggle(true, false, canShowPanel: false);
         Require(!CommandPanelState.Open);
         CommandPanelState.Open = true;
@@ -690,14 +782,14 @@ try
     });
     Test("panel exit keys stay blocked on the closing frame", () =>
     {
-        Require(PanelKeySuppression.Blocks(true, true, -1, 12));
+        IndicatorHarness.ResetIndicatorState();        Require(PanelKeySuppression.Blocks(true, true, -1, 12));
         Require(PanelKeySuppression.Blocks(true, false, 12, 12));
         Require(!PanelKeySuppression.Blocks(true, false, 11, 12));
         Require(!PanelKeySuppression.Blocks(false, true, 12, 12));
     });
     Test("starting a load closes the panel and releases pointer capture", () =>
     {
-        CommandPanelState.Open = true;
+        IndicatorHarness.ResetIndicatorState();        CommandPanelState.Open = true;
         CommandPanelState.SelectTab(CommandPanelTab.Archive);
         CommandPanelState.SetPointerBounds(0, 0, 1920, 1080);
         Require(CommandPanelState.IsPointerBlocked(10, 10));
@@ -710,7 +802,7 @@ try
     });
     Test("panel state distinguishes restricted, available and faulted tools", () =>
     {
-        var restricted = new CommandPanelState.State(false, false, false, false, false, true, false, null, null, null);
+        IndicatorHarness.ResetIndicatorState();        var restricted = new CommandPanelState.State(false, false, false, false, false, true, false, null, null, null);
         Require(restricted.Status == "存读档受限" && !restricted.CanSave && !restricted.CanLoad);
         var ready = new CommandPanelState.State(true, false, false, false, false, true, true, "checkpoint", "selected", null);
         Require(ready.Status == "存读档可用" && ready.Mode == "隔离副本" && ready.CanSave && ready.CanLoad);
@@ -726,7 +818,7 @@ try
     });
     Test("panel actions reuse safe save and load commands", () =>
     {
-        var calls = new List<string>();
+        IndicatorHarness.ResetIndicatorState();        var calls = new List<string>();
         var actions = new CommandPanelState.Actions(() => calls.Add("save"), () => calls.Add("load"));
         var ready = new CommandPanelState.State(true, false, false, false, false, true, true, "checkpoint", "selected", null);
         CommandPanelState.RunSave(ready, actions);
@@ -742,7 +834,7 @@ try
     });
     Test("cheat categories match the agreed object-oriented layout", () =>
     {
-        var sections = CheatSectionCatalog.All;
+        IndicatorHarness.ResetIndicatorState();        var sections = CheatSectionCatalog.All;
         Require(sections.Select(item => item.Section).SequenceEqual(new[]
         {
             CheatSection.Character, CheatSection.Points, CheatSection.Items,
@@ -762,7 +854,7 @@ try
     });
     Test("cheat category selection ignores unavailable sections and resets", () =>
     {
-        CommandPanelState.Reset();
+        IndicatorHarness.ResetIndicatorState();        CommandPanelState.Reset();
         Require(CommandPanelState.CheatSection == CheatSection.Character);
         CommandPanelState.SelectCheatSection(CheatSection.Points);
         Require(CommandPanelState.CheatSection == CheatSection.Points);
@@ -777,13 +869,13 @@ try
     });
     Test("available points never go negative", () =>
     {
-        Require(CheatMath.Available(10, 4) == 6);
+        IndicatorHarness.ResetIndicatorState();        Require(CheatMath.Available(10, 4) == 6);
         Require(CheatMath.Available(4, 10) == 0);
         Require(CheatMath.Available(-1, 0) == 0);
     });
     Test("adding points preserves already used points", () =>
     {
-        Require(CheatMath.AddPoints(10, 4, 3) == 13);
+        IndicatorHarness.ResetIndicatorState();        Require(CheatMath.AddPoints(10, 4, 3) == 13);
         Require(CheatMath.AddPoints(10, 10, -5) == 10);
         Require(CheatMath.AddPoints(3, 10, 0) == 10);
         Require(CheatMath.SetAvailable(4, 7) == 11);
@@ -791,13 +883,13 @@ try
     });
     Test("favor edits clamp at zero and keep fractions", () =>
     {
-        Require(CheatMath.AdjustFavor(5f, -10f) == 0f);
+        IndicatorHarness.ResetIndicatorState();        Require(CheatMath.AdjustFavor(5f, -10f) == 0f);
         Require(CheatMath.AdjustFavor(5.5f, 2.25f) == 7.75f);
         Require(CheatMath.AdjustFavor(0f, 1f) == 1f);
     });
     Test("level and stat edits are bounded", () =>
     {
-        Require(CheatMath.ClampLevel(0) == 1);
+        IndicatorHarness.ResetIndicatorState();        Require(CheatMath.ClampLevel(0) == 1);
         Require(CheatMath.ClampLevel(100000) == 9999);
         Require(CheatMath.ClampLevel(12) == 12);
         Require(CheatMath.ClampStat(-1) == 0);
@@ -805,7 +897,7 @@ try
     });
     Test("cheat edit policy names the blocking game state", () =>
     {
-        string? Reason(bool faulted = false, bool busy = false, bool loading = false, bool saveReady = true,
+        IndicatorHarness.ResetIndicatorState();        string? Reason(bool faulted = false, bool busy = false, bool loading = false, bool saveReady = true,
             bool saving = false, bool battle = false, bool map = false, bool dialogue = false,
             bool canMove = true, bool sequence = false) =>
             CheatEditPolicy.BlockReason(faulted, busy, loading, saveReady, saving, battle, map, dialogue, canMove, sequence);
@@ -823,7 +915,7 @@ try
     });
     Test("panel layout fills the whole screen", () =>
     {
-        var layout = CommandPanelLayout.Create(1920, 1080);
+        IndicatorHarness.ResetIndicatorState();        var layout = CommandPanelLayout.Create(1920, 1080);
         Require(layout.X == 0 && layout.Y == 0 && layout.Width == 1920 && layout.Height == 1080,
             $"{layout.X},{layout.Y},{layout.Width},{layout.Height}");
         Require(layout.X + layout.Width == 1920 && layout.Y + layout.Height == 1080);
@@ -837,7 +929,7 @@ try
     });
     Test("full-screen archive metrics scale the list and large preview", () =>
     {
-        var hd = CommandPanelMetrics.Create(CommandPanelLayout.Create(1280, 720));
+        IndicatorHarness.ResetIndicatorState();        var hd = CommandPanelMetrics.Create(CommandPanelLayout.Create(1280, 720));
         Require(hd.Scale is >= 0.85f and <= 1.05f, "scale " + hd);
         Require(hd.ContentScale is >= 0.85f and <= 1.05f, "content scale " + hd);
         Require(hd.ArchiveListWidth is >= 320f and <= 460f, "list " + hd);
@@ -856,7 +948,7 @@ try
         Require(CheckPreview.Parse("IsPlayerPro('感知','大于等于',15); AwardExp(100)") is null));
     Test("pruning retains five latest saves and an older selected save", () =>
     {
-        var pruneRoot = Path.Combine(root, "prune");
+        IndicatorHarness.ResetIndicatorState();        var pruneRoot = Path.Combine(root, "prune");
         var pruneStore = new CheckpointStore(pruneRoot, "v1");
         string Next() => pruneStore.Create(path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { });
         var generation = Next(); pruneStore.Select(generation);

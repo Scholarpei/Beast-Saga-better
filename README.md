@@ -10,7 +10,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-0078d6?style=for-the-badge&logo=windows11)](https://learn.microsoft.com/windows/)
 [![Runtime](https://img.shields.io/badge/runtime-.NET%206-512bd4?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
 [![BepInEx](https://img.shields.io/badge/loader-BepInEx%20IL2CPP-8b5cf6?style=for-the-badge)](https://bepinex.dev/)
-[![Tests](https://img.shields.io/badge/tests-177%2F177-brightgreen?style=for-the-badge)](#验证)
+[![Tests](https://img.shields.io/badge/tests-189%2F189-brightgreen?style=for-the-badge)](#验证)
 
 </div>
 
@@ -106,13 +106,14 @@ RPG 对话最大的成本不是读文本，而是选错以后不知道要回溯�
 ### 从 Release 安装
 
 1. 安装适用于《灵兽江湖》的 BepInEx IL2CPP 环境；
-2. 将发行包中的 `BeastSagaBetter.dll` 放入：
+2. 确认旧插件目录 `BepInEx/plugins/SafeDialogueTools/` 已经移走或禁用；
+3. 将发行包中的 `BeastSagaBetter.dll` 放入：
 
 ```text
 BepInEx/plugins/BeastSagaBetter/BeastSagaBetter.dll
 ```
 
-3. 启动游戏后按 `Tab` 检查面板是否可用。
+4. 启动游戏后按 `Tab` 检查面板是否可用。
 
 配置文件位于：
 
@@ -122,13 +123,24 @@ BepInEx/config/scholarpei.beast-saga-better.cfg
 
 对话前 SL 需要同时满足两个条件：配置中的 `EnableCheckpoints` 为 `true`，且正式游戏根目录存在 `SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED` 授权标记。删除标记或关闭配置即可回到原生 `F5` / `F6` 行为。
 
+Release 包当前只包含插件本体 `BeastSagaBetter.dll`。它假定游戏根目录已有 BepInEx IL2CPP 及本项目依赖的 interop 运行库；发行包不包含 BepInEx、游戏资源、检查点数据或授权标记。
+
 ### 从源码部署
 
 ```powershell
 ./tools/deploy-production.ps1
 ```
 
-脚本要求先退出游戏，默认执行完整测试与 Release 构建；已自行测试或构建时可加 `-SkipTests`、`-SkipBuild`。
+脚本要求先退出游戏，默认执行完整测试与 Release 构建；已自行测试或构建时可加 `-SkipTests`、`-SkipBuild`。部署相关纯辅助函数测试可用 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/deployment.tests.ps1` 单独执行。
+
+默认按项目位置定位正式游戏根目录，并处理 `BepInEx/plugins/` 下的改名迁移：
+
+- 新 `BeastSagaBetter/` 与旧 `SafeDialogueTools/` 同时存在时直接拒绝，避免双插件；
+- 只找到唯一旧目录时，先把整个旧目录完整备份到仓库 `backups/<stamp>-deploy/legacy-plugin/`，再部署新 DLL 并把旧目录内容移入 `.disabled/`；
+- 游戏根目录不在项目父目录时用 `-GameDir` 显式指定；需要自定义安装位置时用 `-PluginDir` 显式指定，此时脚本不执行默认目录迁移；
+- `-SkipBuild` 会检查 `Plugin/`、`Core/` 的 `.cs` 与 `.csproj` 是否晚于构建产物。
+
+部署复制使用目标同目录临时文件、SHA-256 校验和原子替换；后续校验失败会用同目录保存的旧目标副本恢复。脚本还会移除 `dist/` 中不再使用的 `SafeDialogueTools.dll/.pdb`，再写入当前 `BeastSagaBetter.dll`。
 
 ## 快捷键
 
@@ -153,11 +165,17 @@ BeastSagaBetterData/
 
 ## 卸载与降级
 
-退出游戏后移走整个 `BepInEx/plugins/BeastSagaBetter/` 目录即可。要临时停用对话前 SL，可以删除 `SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED`，或把 `EnableCheckpoints` 改回 `false`。
+退出游戏后卸载或降级：
+
+1. 移走整个 `BepInEx/plugins/BeastSagaBetter/` 目录；恢复旧版本时优先使用部署时生成的完整备份，不要把旧 DLL 与新 DLL 放回相邻目录；
+2. 检查并按需移走旧版插件目录 `BepInEx/plugins/SafeDialogueTools/`（部署脚本迁移后内容位于 `.disabled/`），确保没有双插件；
+3. 检查 `BepInEx/config/` 中当前 `scholarpei.beast-saga-better.cfg` 和旧版配置；旧版配置 GUID 与新插件不同，不会被自动迁移，手动复制设置前先确认键名含义；
+4. 检查点数据分别位于 `BeastSagaBetterData/` 和旧版 `SafeDialogueToolsData/`，卸载插件不会删除；确认不再回退时再另行备份或清理；
+5. 如不需要正式对话前 SL，删除游戏根目录授权标记 `SAFE_DIALOGUE_PRODUCTION_SL_AUTHORIZED`；临时停用也可把配置中的 `EnableCheckpoints` 改回 `false`。
 
 ## 验证
 
-自动化测试覆盖检查点历史、读取策略、判定展示、面板布局、角色、点数和物品修改。当前测试集为 177 项。
+自动化测试覆盖检查点历史、读取策略、判定展示、面板布局、角色、点数和物品修改。当前测试集为 189 项。
 
 有限场景通过不等于所有剧情旗标、战斗触发器和磁盘异常都已覆盖。遇到读档卡住或状态异常时，先停用对话前 SL 并保留现场，再反馈日志与检查点目录结构。
 

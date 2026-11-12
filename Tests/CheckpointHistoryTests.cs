@@ -63,6 +63,16 @@ internal static class CheckpointHistoryTests
                 Require(File.ReadAllText(notesPath) == "{broken");
             });
 
+            Test("manual quotas below the safety floor are rejected before creating storage", () =>
+            {
+                var unsafeRoot = Path.Combine(root, "unsafe-manual-quota");
+                Reject(() => new CheckpointStore(unsafeRoot, "v1", maxManualCheckpoints: 4));
+                Require(!Directory.Exists(unsafeRoot));
+                var minimalDialogueRoot = Path.Combine(root, "minimal-dialogue-quota");
+                new CheckpointStore(minimalDialogueRoot, "v1", maxPreDialogueCheckpoints: 1);
+                Require(Directory.Exists(minimalDialogueRoot));
+            });
+
             Test("archive summaries can skip payload hashing while strict listing rejects tampering", () =>
             {
                 var archiveRoot = Path.Combine(root, "archive");
@@ -126,6 +136,81 @@ internal static class CheckpointHistoryTests
                 Require(manual >= 6);
             });
 
+            Test("pruning directories are cleaned and do not consume archive quota", () =>
+            {
+                var pruningRoot = Path.Combine(root, "pruning-residue");
+                var pruningStore = new CheckpointStore(pruningRoot, "v1", maxManualCheckpoints: 5);
+                for (var index = 0; index < 6; index++)
+                {
+                    pruningStore.Create(path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                        new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "清理", 10, 1, 1, null));
+                }
+                var residue = Path.Combine(pruningRoot,
+                    DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + ".pruning-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(residue);
+                File.WriteAllText(Path.Combine(residue, "save.es3"), "interrupted");
+                Require(pruningStore.List().All(item => Path.GetDirectoryName(item.ScreenshotPath) != residue));
+                pruningStore.Prune();
+                Require(!Directory.Exists(residue));
+                Require(pruningStore.List().Count == 5, pruningStore.List().Count.ToString());
+            });
+
+            Test("checkpoint and load-work operations serialize on the shared data root", () =>
+            {
+                var lockRoot = Path.Combine(root, "locked-data", "checkpoints");
+                var lockedStore = new CheckpointStore(lockRoot, "v1");
+                lockedStore.Create(path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "锁", 10, 1, 1, null));
+                lockedStore.Select(Directory.GetDirectories(lockRoot).Select(Path.GetFileName).Single()!);
+                var workStore = new LoadWorkStore(Path.Combine(Path.GetDirectoryName(lockRoot)!, "load-work"));
+                using var gate = AcquireDataRootLock(Path.GetDirectoryName(lockRoot)!);
+                var read = Task.Run(() => lockedStore.Selected());
+                var cleanup = Task.Run(() => workStore.CleanupExcept(null));
+                Require(!read.Wait(100) && !cleanup.Wait(100), "operations bypassed the data-root lock");
+                gate.Dispose();
+                Require(read.Wait(5000) && cleanup.Wait(5000));
+            });
+
+            Test("selection snapshots cannot race checkpoint deletion", () =>
+            {
+                var raceRoot = Path.Combine(root, "selection-race");
+                var first = new CheckpointStore(raceRoot, "v1");
+                var second = new CheckpointStore(raceRoot, "v1");
+                string Create() => first.Create(path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "竞态", 10, 1, 1, null));
+                var generationA = Create();
+                var generationB = Create();
+                first.Select(generationA);
+                var selectors = Task.Run(() =>
+                {
+                    for (var index = 0; index < 20; index++) second.Select(index % 2 == 0 ? generationA : generationB);
+                });
+                var pruner = Task.Run(() =>
+                {
+                    for (var index = 0; index < 20; index++) second.Prune();
+                });
+                Task.WaitAll(selectors, pruner);
+                var selected = first.Selected();
+                Require(selected == generationA || selected == generationB, selected ?? "missing");
+                first.Validate(generationA);
+                first.Validate(generationB);
+            });
+
+            Test("load-work cleanup cannot race a newly prepared directory", () =>
+            {
+                var workRoot = Path.Combine(root, "load-work-race");
+                var store = new LoadWorkStore(workRoot);
+                var active = store.Prepare();
+                using var gate = AcquireDataRootLock(Path.GetDirectoryName(workRoot)!);
+                var cleanup = Task.Run(() => store.CleanupExcept(Path.GetFileName(active)));
+                string? prepared = null;
+                var preparation = Task.Run(() => prepared = new LoadWorkStore(workRoot).Prepare());
+                Require(!cleanup.Wait(100) && !preparation.Wait(100), "load-work operations bypassed the data-root lock");
+                gate.Dispose();
+                Task.WaitAll(cleanup, preparation);
+                Require(Directory.Exists(active) && Directory.Exists(prepared));
+            });
+
             Test("pre-dialogue conversation titles survive restart and can be filtered or selected", () =>
             {
                 var dialogueRoot = Path.Combine(root, "dialogue-history");
@@ -182,7 +267,7 @@ internal static class CheckpointHistoryTests
             Test("legacy v1 checkpoints use their previous five-save quota", () =>
             {
                 var legacyRoot = Path.Combine(root, "legacy-prune");
-                var legacyStore = new CheckpointStore(legacyRoot, "v1", maxManualCheckpoints: 2, maxPreDialogueCheckpoints: 1);
+                var legacyStore = new CheckpointStore(legacyRoot, "v1", maxManualCheckpoints: 5, maxPreDialogueCheckpoints: 1);
                 for (var index = 0; index < 8; index++)
                 {
                     var generation = DateTime.UtcNow.AddSeconds(index).ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N");
@@ -350,6 +435,15 @@ internal static class CheckpointHistoryTests
         using var stream = File.OpenRead(path);
         using var algorithm = System.Security.Cryptography.SHA256.Create();
         return Convert.ToHexString(algorithm.ComputeHash(stream));
+    }
+
+    private static IDisposable AcquireDataRootLock(string dataRoot)
+    {
+        var lockType = typeof(CheckpointStore).Assembly.GetType("BeastSagaBetter.Core.DataRootLock")
+            ?? throw new Exception("Missing data-root lock");
+        var acquire = lockType.GetMethod("Acquire", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public, binder: null, new[] { typeof(string) }, modifiers: null)
+            ?? throw new Exception("Missing data-root lock acquisition");
+        return (IDisposable)acquire.Invoke(null, new object[] { dataRoot })!;
     }
 
     private static void RewriteMetadata(string root, string fingerprint, string generation, Func<CheckpointMetadata, CheckpointMetadata> rewrite, string? includeFile = null)

@@ -6,7 +6,7 @@ using PixelCrushers.DialogueSystem;
 
 namespace BeastSagaBetter.Tests
 {
-    internal static class IndicatorHarness
+    internal static partial class IndicatorHarness
     {
         internal static void Render(StandardUIResponseButton button, Response response)
         {
@@ -69,17 +69,25 @@ namespace BeastSagaBetter.Tests
             return new Response { destinationEntry = entry, formattedText = new FormattedText { text = "仿造戒指（判定：巧艺20）" } };
         }
 
-    }
-
-    internal static class DialogueVariableState
-    {
-        internal static readonly Dictionary<string, string> Variables = new();
-        internal static int Reads;
-
-        internal static void Reset()
+        internal static class DialogueVariableState
         {
-            Variables.Clear();
-            Reads = 0;
+            internal static readonly Dictionary<string, string> Variables = new();
+            internal static int Reads;
+
+            internal static void Reset()
+            {
+                Variables.Clear();
+                Reads = 0;
+            }
+        }
+
+        internal static void ResetIndicatorState()
+        {
+            DialogueVariableState.Reset();
+        var player = new PlayerDataManager { Dialogue = new PlayerDialogue() };
+        PlayerDataManager._Instance = player;
+        PlayerFriendDataManager._Instance = new PlayerFriendDataManager();
+            PlayerDataHelper._Instance = new PlayerDataHelper();
         }
     }
 }
@@ -140,8 +148,8 @@ namespace PixelCrushers.DialogueSystem
     {
         internal static Lua.Result GetVariable(string name)
         {
-            BeastSagaBetter.Tests.DialogueVariableState.Reads++;
-            return new Lua.Result(BeastSagaBetter.Tests.DialogueVariableState.Variables.TryGetValue(name, out var value) ? value : null);
+            BeastSagaBetter.Tests.IndicatorHarness.DialogueVariableState.Reads++;
+            return new Lua.Result(BeastSagaBetter.Tests.IndicatorHarness.DialogueVariableState.Variables.TryGetValue(name, out var value) ? value : null);
         }
     }
     internal sealed class Lua
@@ -187,19 +195,44 @@ internal sealed class PlayerDataManager
     internal object _PlayerData = new();
     internal bool _IsLoadOver = true;
     internal readonly Dictionary<string, int> ItemCounts = new();
+    internal readonly Dictionary<string, int> DressedItemCounts = new();
+    internal PlayerDialogue? Dialogue;
     internal int GetWuXing() => 10;
-    internal int GetPro(PlayerProType type) => 10;
-    internal int GetLifeTypeLV(LifeType type) => 10;
+    internal int GetPro(PlayerProType type) => ProValues.Count == 0 ? 10 : ProValues[0];
+    internal int GetLifeTypeLV(LifeType type) => LifeValues.Count == 0 ? 10 : LifeValues[0];
     internal int ItemCount(string name) => ItemCounts.TryGetValue(name, out var count) ? count : 0;
+    internal int ItemDressCount(string name) => DressedItemCounts.TryGetValue(name, out var count) ? count : 0;
+    internal PlayerDialogue? GetComponent<T>()
+    {
+        if (typeof(T) != typeof(PlayerDialogue)) throw new NotSupportedException(typeof(T).FullName);
+        return Dialogue;
+    }
+    internal readonly List<int> ProValues = new();
+    internal readonly List<int> LifeValues = new();
+}
+internal sealed class PlayerDialogue
+{
+    internal bool _IsLoadOver = true;
+    internal readonly Dictionary<string, int> StoredItemCounts = new();
+    internal int ChuCangIsHaveItemNum(string name) => StoredItemCounts.TryGetValue(name, out var count) ? count : 0;
 }
 internal sealed class FriendData { internal List<string> BattleFriend = new(); }
-internal sealed class Friend { internal int GetLifeLvbyType(LifeType type) => 10; }
+internal sealed class Friend
+{
+    internal int LifeValue = 10;
+    internal int _WuXing = 10;
+    internal readonly List<int> ProValues = new();
+    internal int GetLifeLvbyType(LifeType type) => LifeValue;
+    internal int GetPro(PlayerProType type) => ProValues.Count == 0 ? 20 : ProValues[0];
+}
 internal sealed class PlayerFriendDataManager
 {
     internal static PlayerFriendDataManager _Instance = new();
     internal FriendData _FriendData = new();
     internal bool _IsLoadOver = true;
-    internal Friend? GetFriend(string name) => null;
+    internal readonly Dictionary<string, Friend> Friends = new();
+    internal Friend? GetFriend(string name) => Friends.TryGetValue(name, out var friend) ? friend : null;
+    internal List<string> GetBattleFriends() => _FriendData.BattleFriend;
 }
 internal sealed class PlayerDataHelper
 {

@@ -65,7 +65,14 @@ public static class FutureScriptPreview
                 continue;
             }
             var constant = VariableConstantPattern.Match(statement);
-            if (constant.Success) continue;
+            if (constant.Success)
+            {
+                if (constant.Groups["name"].Value.Contains("好感", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                return new(effects, "剧情变量赋值后，后续状态未知，未继续预测");
+            }
             var questState = QuestStatePattern2.Match(statement);
             if (questState.Success)
             {

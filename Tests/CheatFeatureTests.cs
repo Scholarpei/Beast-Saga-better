@@ -289,20 +289,29 @@ internal static class CheatFeatureTests
             Require(CheatPointPolicy.Description((CheatPointPool)999) == "");
         });
 
-        Test("pre-edit checkpoint is requested at most once per session", () =>
+        Test("pre-edit checkpoint reservation succeeds once and releases after failure", () =>
         {
             CheatSessionState.Reset();
-            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true));
-            Require(CheatSessionState.PreEditCheckpointTaken);
-            Require(!CheatSessionState.TryBeginPreEditCheckpoint(true, true));
+            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true, out var token));
+            Require(!CheatSessionState.TryBeginPreEditCheckpoint(true, true, out _));
+            CheatSessionState.ReleaseFailedPreEditCheckpoint(token);
+            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true, out _));
             CheatSessionState.Reset();
-            Require(!CheatSessionState.TryBeginPreEditCheckpoint(false, true));
-            Require(!CheatSessionState.PreEditCheckpointTaken);
-            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true));
+            Require(!CheatSessionState.TryBeginPreEditCheckpoint(false, true, out _));
+            Require(!CheatSessionState.TryBeginPreEditCheckpoint(true, false, out _));
+            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true, out _));
+        });
+
+        Test("successful pre-edit generation is retained and cleared with the session", () =>
+        {
             CheatSessionState.Reset();
-            Require(!CheatSessionState.TryBeginPreEditCheckpoint(true, false));
-            Require(!CheatSessionState.PreEditCheckpointTaken);
-            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true));
+            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true, out var token));
+            CheatSessionState.CompletePreEditCheckpoint(token, "generation-a");
+            Require(CheatSessionState.ProtectedGeneration == "generation-a");
+            Require(!CheatSessionState.TryBeginPreEditCheckpoint(true, true, out _));
+            CheatSessionState.Reset();
+            Require(CheatSessionState.ProtectedGeneration == null);
+            Require(CheatSessionState.TryBeginPreEditCheckpoint(true, true, out _));
         });
 
         Test("panel reset restores the default cheat section and closes the panel", () =>

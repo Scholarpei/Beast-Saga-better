@@ -26,83 +26,92 @@ public sealed class CheckpointStore
 
     public CheckpointStore(string root, string fingerprint, int maxManualCheckpoints = 50, int maxPreDialogueCheckpoints = 10)
     {
+        if (maxManualCheckpoints < 5)
+            throw new InvalidDataException("Manual checkpoint quota must be at least 5");
+        if (maxPreDialogueCheckpoints < 1)
+            throw new InvalidDataException("Pre-dialogue checkpoint quota must be at least 1");
         this.root = Path.GetFullPath(root);
         this.fingerprint = fingerprint;
-        this.maxManualCheckpoints = Math.Max(1, maxManualCheckpoints);
-        this.maxPreDialogueCheckpoints = Math.Max(1, maxPreDialogueCheckpoints);
+        this.maxManualCheckpoints = maxManualCheckpoints;
+        this.maxPreDialogueCheckpoints = maxPreDialogueCheckpoints;
         Directory.CreateDirectory(this.root);
         CheckDirectory(this.root);
     }
 
     public string Create(Action<string> write, Action<string> validate, CheckpointMetadata? metadata = null)
     {
-        var generation = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N");
-        var staging = Path.Combine(root, generation + ".pending");
-        Directory.CreateDirectory(staging);
-        try
+        using (DataRootLock.Acquire(DataRootPath))
         {
-            write(staging);
-            validate(staging);
-            CheckDirectory(staging);
-            if (!File.Exists(Path.Combine(staging, "save.es3"))) throw new InvalidDataException("Missing save.es3");
-            var files = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var path in Directory.GetFiles(staging))
+            var generation = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") + "-" + Guid.NewGuid().ToString("N");
+            var staging = Path.Combine(root, generation + ".pending");
+            Directory.CreateDirectory(staging);
+            try
             {
-                CheckFile(path);
-                using (var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read)) stream.Flush(true);
-                files.Add(Path.GetFileName(path), Hash(path));
+                write(staging);
+                validate(staging);
+                CheckDirectory(staging);
+                if (!File.Exists(Path.Combine(staging, "save.es3"))) throw new InvalidDataException("Missing save.es3");
+                var files = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var path in Directory.GetFiles(staging))
+                {
+                    CheckFile(path);
+                    using (var stream = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read)) stream.Flush(true);
+                    files.Add(Path.GetFileName(path), Hash(path));
+                }
+                if (Directory.GetDirectories(staging).Length != 0) throw new InvalidDataException("Unexpected nested directory");
+                if (metadata is not null)
+                {
+                    if (!Enum.IsDefined(metadata.Kind) || metadata.Kind == CheckpointKind.Legacy)
+                        throw new InvalidDataException("Invalid checkpoint kind");
+                    if (metadata.Screenshot is not null && (metadata.Screenshot != "thumbnail.png" || !files.ContainsKey(metadata.Screenshot)))
+                        throw new InvalidDataException("Missing checkpoint screenshot");
+                }
+                DurableWrite(Path.Combine(staging, "manifest.json"), JsonSerializer.Serialize(new Manifest(
+                    metadata is null ? 1 : 2, fingerprint, files, metadata)));
+                Directory.Move(staging, Path.Combine(root, generation));
+                ValidateCheckpoint(generation);
+                return generation;
             }
-            if (Directory.GetDirectories(staging).Length != 0) throw new InvalidDataException("Unexpected nested directory");
-            if (metadata is not null)
+            finally
             {
-                if (!Enum.IsDefined(metadata.Kind) || metadata.Kind == CheckpointKind.Legacy)
-                    throw new InvalidDataException("Invalid checkpoint kind");
-                if (metadata.Screenshot is not null && (metadata.Screenshot != "thumbnail.png" || !files.ContainsKey(metadata.Screenshot)))
-                    throw new InvalidDataException("Missing checkpoint screenshot");
+                if (Directory.Exists(staging) && (File.GetAttributes(staging) & FileAttributes.ReparsePoint) == 0)
+                    Directory.Delete(staging, true);
             }
-            DurableWrite(Path.Combine(staging, "manifest.json"), JsonSerializer.Serialize(new Manifest(
-                metadata is null ? 1 : 2, fingerprint, files, metadata)));
-            Directory.Move(staging, Path.Combine(root, generation));
-            Validate(generation);
-            return generation;
-        }
-        finally
-        {
-            if (Directory.Exists(staging) && (File.GetAttributes(staging) & FileAttributes.ReparsePoint) == 0)
-                Directory.Delete(staging, true);
         }
     }
 
     public void Select(string generation)
     {
-        Validate(generation);
-        var pending = Path.Combine(root, "selected-" + Guid.NewGuid().ToString("N") + ".tmp");
-        try
+        using (DataRootLock.Acquire(DataRootPath))
         {
-            DurableWrite(pending, JsonSerializer.Serialize(generation));
-            var target = Path.Combine(root, "selected.json");
-            if (File.Exists(target)) CheckFile(target);
-            File.Move(pending, target, true);
+            ValidateCheckpoint(generation);
+            var pending = Path.Combine(root, "selected-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try
+            {
+                DurableWrite(pending, JsonSerializer.Serialize(generation));
+                var target = Path.Combine(root, "selected.json");
+                if (File.Exists(target)) CheckFile(target);
+                File.Move(pending, target, true);
+            }
+            finally { if (File.Exists(pending)) File.Delete(pending); }
         }
-        finally { if (File.Exists(pending)) File.Delete(pending); }
     }
 
     public string? Selected(bool verifyPayload = true)
     {
-        var path = Path.Combine(root, "selected.json");
-        if (!File.Exists(path)) return null;
-        CheckFile(path);
-        try
+        using (DataRootLock.Acquire(DataRootPath))
         {
-            var generation = JsonSerializer.Deserialize<string>(File.ReadAllText(path)) ?? throw new InvalidDataException("Empty read target");
-            if (verifyPayload) Validate(generation);
-            else CheckSelectionTarget(generation);
-            return generation;
+            return SelectedUnlocked(verifyPayload);
         }
-        catch (JsonException error) { throw new InvalidDataException("Invalid read target", error); }
     }
 
     public string Validate(string generation)
+    {
+        using (DataRootLock.Acquire(DataRootPath))
+            return ValidateCheckpoint(generation);
+    }
+
+    private string ValidateCheckpoint(string generation)
     {
         if (!Regex.IsMatch(generation, @"\A[0-9]{17}-[a-f0-9]{32}\z")) throw new InvalidDataException("Invalid generation identifier");
         CheckDirectory(root);
@@ -133,58 +142,73 @@ public sealed class CheckpointStore
 
     public void Prune(params string?[] protectedGenerations)
     {
-        var keep = protectedGenerations.Where(value => value is not null).ToHashSet(StringComparer.Ordinal);
-        var selected = Selected();
-        keep.Add(selected);
-        var candidates = Directory.GetDirectories(root).Select(Path.GetFileName)
-            .Where(name => name is not null && Regex.IsMatch(name, @"\A[0-9]{17}-[a-f0-9]{32}\z"))
-            .OrderByDescending(name => name, StringComparer.Ordinal).ToArray();
-        var notes = Notes();
-        var kinds = candidates.ToDictionary(name => name!, name => ReadKind(name!));
-        foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Manual).Take(maxManualCheckpoints)) keep.Add(generation);
-        foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.PreDialogue).Take(maxPreDialogueCheckpoints)) keep.Add(generation);
-        foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Legacy).Take(5)) keep.Add(generation);
-        foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Manual && !string.IsNullOrWhiteSpace(notes.GetValueOrDefault(name!)))) keep.Add(generation);
-        foreach (var generation in candidates.Where(name => !keep.Contains(name)))
+        using (DataRootLock.Acquire(DataRootPath))
         {
-            try
+            CleanPruningDirectories();
+            var keep = protectedGenerations.Where(value => value is not null).ToHashSet(StringComparer.Ordinal);
+            var selected = SelectedUnlocked();
+            keep.Add(selected);
+            var candidates = Directory.GetDirectories(root).Select(Path.GetFileName)
+                .Where(name => name is not null && Regex.IsMatch(name, @"\A[0-9]{17}-[a-f0-9]{32}\z"))
+                .OrderByDescending(name => name, StringComparer.Ordinal).ToArray();
+            var notes = ReadNotes();
+            var kinds = candidates.ToDictionary(name => name!, name => ReadKind(name!));
+            foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Manual).Take(maxManualCheckpoints)) keep.Add(generation);
+            foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.PreDialogue).Take(maxPreDialogueCheckpoints)) keep.Add(generation);
+            foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Legacy).Take(5)) keep.Add(generation);
+            foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Manual && !string.IsNullOrWhiteSpace(notes.GetValueOrDefault(name!)))) keep.Add(generation);
+            foreach (var generation in candidates.Where(name => !keep.Contains(name)))
             {
-                var folder = Validate(generation!);
-                Directory.Delete(folder, true);
+                try
+                {
+                    var folder = ValidateCheckpoint(generation!);
+                    var pruning = Path.Combine(root, generation + ".pruning-" + Guid.NewGuid().ToString("N"));
+                    Directory.Move(folder, pruning);
+                    DeleteDirectory(pruning);
+                }
+                catch (InvalidDataException) { }
             }
-            catch (InvalidDataException) { }
         }
     }
 
     public IReadOnlyList<CheckpointSummary> List(bool verifyPayloads = true)
     {
-        var selected = TrySelected(out var selectedGeneration, verifyPayloads) ? selectedGeneration : null;
-        var notes = Notes();
-        var summaries = new List<CheckpointSummary>();
-        foreach (var name in Directory.GetDirectories(root).Select(Path.GetFileName).Where(name => name is not null).OrderByDescending(name => name, StringComparer.Ordinal))
+        using (DataRootLock.Acquire(DataRootPath))
         {
-            if (!Regex.IsMatch(name!, @"\A[0-9]{17}-[a-f0-9]{32}\z")) continue;
-            try
+            var selected = TrySelectedUnlocked(out var selectedGeneration, verifyPayloads) ? selectedGeneration : null;
+            var notes = ReadNotes();
+            var summaries = new List<CheckpointSummary>();
+            foreach (var name in Directory.GetDirectories(root).Select(Path.GetFileName).Where(name => name is not null).OrderByDescending(name => name, StringComparer.Ordinal))
             {
-                if (verifyPayloads) Validate(name!);
-                var manifest = ReadValidatedManifest(name!);
-                var metadata = manifest.Metadata;
-                var screenshot = metadata?.Screenshot;
-                if (screenshot is null && manifest.Files.ContainsKey("thumbnail.png")) screenshot = "thumbnail.png";
-                var screenshotPath = screenshot is null ? null : Path.Combine(root, name!, screenshot);
-                summaries.Add(new CheckpointSummary(
-                    name!, metadata?.Kind ?? CheckpointKind.Legacy, metadata?.CapturedAt ?? default,
-                    metadata?.MapName, metadata?.PlayerLevel, metadata?.Round, metadata?.Day,
-                    screenshot is not null && manifest.Files.ContainsKey(screenshot),
-                    screenshotPath, notes.TryGetValue(name!, out var note) ? note : null,
-                    selected == name, metadata?.Conversation));
+                if (!Regex.IsMatch(name!, @"\A[0-9]{17}-[a-f0-9]{32}\z")) continue;
+                try
+                {
+                    if (verifyPayloads) ValidateCheckpoint(name!);
+                    var manifest = ReadValidatedManifest(name!);
+                    var metadata = manifest.Metadata;
+                    var screenshot = metadata?.Screenshot;
+                    if (screenshot is null && manifest.Files.ContainsKey("thumbnail.png")) screenshot = "thumbnail.png";
+                    var screenshotPath = screenshot is null ? null : Path.Combine(root, name!, screenshot);
+                    summaries.Add(new CheckpointSummary(
+                        name!, metadata?.Kind ?? CheckpointKind.Legacy, metadata?.CapturedAt ?? default,
+                        metadata?.MapName, metadata?.PlayerLevel, metadata?.Round, metadata?.Day,
+                        screenshot is not null && manifest.Files.ContainsKey(screenshot),
+                        screenshotPath, notes.TryGetValue(name!, out var note) ? note : null,
+                        selected == name, metadata?.Conversation));
+                }
+                catch (InvalidDataException) when (!verifyPayloads) { }
             }
-            catch (InvalidDataException) when (!verifyPayloads) { }
+            return summaries;
         }
-        return summaries;
     }
 
     public IReadOnlyDictionary<string, string> Notes()
+    {
+        using (DataRootLock.Acquire(DataRootPath))
+            return ReadNotes();
+    }
+
+    private IReadOnlyDictionary<string, string> ReadNotes()
     {
         var path = Path.Combine(root, "notes.json");
         if (!File.Exists(path)) return new Dictionary<string, string>();
@@ -203,28 +227,61 @@ public sealed class CheckpointStore
 
     public void SetNote(string generation, string value)
     {
-        Validate(generation);
-        var note = value.Trim();
-        if (note.Length > 500) note = note[..500];
-        var notes = Notes().Where(pair => !string.IsNullOrWhiteSpace(pair.Value))
-            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-        if (note.Length == 0) notes.Remove(generation);
-        else notes[generation] = note;
-        var pending = Path.Combine(root, "notes-" + Guid.NewGuid().ToString("N") + ".tmp");
-        try
+        using (DataRootLock.Acquire(DataRootPath))
         {
-            DurableWrite(pending, JsonSerializer.Serialize(new NoteIndex(1, notes)));
-            var target = Path.Combine(root, "notes.json");
-            if (File.Exists(target)) CheckFile(target);
-            File.Move(pending, target, true);
+            ValidateCheckpoint(generation);
+            var note = value.Trim();
+            if (note.Length > 500) note = note[..500];
+            var notes = ReadNotes().Where(pair => !string.IsNullOrWhiteSpace(pair.Value))
+                .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            if (note.Length == 0) notes.Remove(generation);
+            else notes[generation] = note;
+            var pending = Path.Combine(root, "notes-" + Guid.NewGuid().ToString("N") + ".tmp");
+            try
+            {
+                DurableWrite(pending, JsonSerializer.Serialize(new NoteIndex(1, notes)));
+                var target = Path.Combine(root, "notes.json");
+                if (File.Exists(target)) CheckFile(target);
+                File.Move(pending, target, true);
+            }
+            finally { if (File.Exists(pending)) File.Delete(pending); }
         }
-        finally { if (File.Exists(pending)) File.Delete(pending); }
     }
 
-    private bool TrySelected(out string? generation, bool verifyPayload = true)
+    private string? SelectedUnlocked(bool verifyPayload = true)
     {
-        try { generation = Selected(verifyPayload); return generation is not null; }
+        var path = Path.Combine(root, "selected.json");
+        if (!File.Exists(path)) return null;
+        CheckFile(path);
+        try
+        {
+            var generation = JsonSerializer.Deserialize<string>(File.ReadAllText(path)) ?? throw new InvalidDataException("Empty read target");
+            if (verifyPayload) ValidateCheckpoint(generation);
+            else CheckSelectionTarget(generation);
+            return generation;
+        }
+        catch (JsonException error) { throw new InvalidDataException("Invalid read target", error); }
+    }
+
+    private bool TrySelectedUnlocked(out string? generation, bool verifyPayload = true)
+    {
+        try { generation = SelectedUnlocked(verifyPayload); return generation is not null; }
         catch (InvalidDataException) { generation = null; return false; }
+    }
+
+    private string DataRootPath => Path.GetDirectoryName(root) ?? root;
+
+    private void CleanPruningDirectories()
+    {
+        foreach (var directory in Directory.GetDirectories(root))
+            if (Path.GetFileName(directory).Contains(".pruning-", StringComparison.Ordinal))
+                DeleteDirectory(directory);
+    }
+
+    private static void DeleteDirectory(string path)
+    {
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) == 0)
+            Directory.Delete(path, true);
     }
 
     private void CheckSelectionTarget(string generation)

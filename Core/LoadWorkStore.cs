@@ -15,20 +15,28 @@ public sealed class LoadWorkStore
 
     public string Prepare()
     {
-        var path = Path.Combine(root, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(path);
-        return path;
+        using (DataRootLock.Acquire(DataRootPath))
+        {
+            var path = Path.Combine(root, Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            return path;
+        }
     }
 
     public void CleanupExcept(string? active)
     {
-        foreach (var directory in Directory.GetDirectories(root))
+        using (DataRootLock.Acquire(DataRootPath))
         {
-            var name = Path.GetFileName(directory);
-            var activeName = active is null ? null : Path.GetFileName(Path.GetFullPath(Path.Combine(root, active)));
-            if (activeName == name || !GenerationPattern.IsMatch(name)) continue;
-            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) == 0)
-                Directory.Delete(directory, true);
+            foreach (var directory in Directory.GetDirectories(root))
+            {
+                var name = Path.GetFileName(directory);
+                var activeName = active is null ? null : Path.GetFileName(Path.GetFullPath(Path.Combine(root, active)));
+                if (activeName == name || !GenerationPattern.IsMatch(name)) continue;
+                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) == 0)
+                    Directory.Delete(directory, true);
+            }
         }
     }
+
+    private string DataRootPath => Path.GetDirectoryName(root) ?? root;
 }
