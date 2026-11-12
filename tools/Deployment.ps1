@@ -64,7 +64,19 @@ function New-DeploymentPlan {
 
     $newExists = Test-Path -LiteralPath $defaultPluginDir
     $legacyExists = Test-Path -LiteralPath $legacyPluginDir
-    if ($newExists -and $legacyExists) {
+    $legacyChildren = @(
+        if ($legacyExists) {
+            Get-ChildItem -LiteralPath $legacyPluginDir -Force
+        }
+    )
+    $legacyDisabled = ($legacyExists -and $legacyChildren.Count -eq 1 -and
+        $legacyChildren[0].PSIsContainer -and $legacyChildren[0].Name -eq '.disabled')
+    if ($legacyDisabled) {
+        $disabledDlls = @(Get-ChildItem -LiteralPath $legacyPluginDir -Recurse -File -Force |
+            Where-Object { $_.Extension -eq '.dll' })
+        $legacyDisabled = $disabledDlls.Count -eq 0
+    }
+    if ($newExists -and $legacyExists -and -not $legacyDisabled) {
         throw "新旧插件目录不能同时存在：$defaultPluginDir / $legacyPluginDir。请确认后只保留一个，或用 -PluginDir 显式指定目标。"
     }
 
@@ -72,14 +84,14 @@ function New-DeploymentPlan {
     $allowCreate = $false
     if (-not [string]::IsNullOrWhiteSpace($PluginDir)) {
         $allowCreate = -not (Test-Path -LiteralPath $targetPluginDir)
-    } elseif ($legacyExists) {
+    } elseif ($legacyExists -and -not $legacyDisabled) {
         $requiresMigration = $true
     }
 
     [pscustomobject]@{
         GameDir = [IO.Path]::GetFullPath($GameDir)
         PluginDir = $targetPluginDir
-        LegacyPluginDir = if ($legacyExists) { $legacyPluginDir } else { $null }
+        LegacyPluginDir = if ($legacyExists -and -not $legacyDisabled) { $legacyPluginDir } else { $null }
         RequiresMigration = $requiresMigration
         AllowCreate = $allowCreate
     }
@@ -202,7 +214,22 @@ function Disable-DirectoryTree {
     Get-ChildItem -LiteralPath $Directory -Force |
         Where-Object { $_.Name -ne '.disabled' } |
         ForEach-Object {
+            if ($_.PSIsContainer) {
+                Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force |
+                    Where-Object { $_.Name -like '*.dll' -or $_.Name -like '*.dll.disabled' } |
+                    ForEach-Object {
+                        $disabledAssembly = $_.FullName + '.disabled'
+                        if (Test-Path -LiteralPath $disabledAssembly) {
+                            throw "禁用目标已存在：$disabledAssembly"
+                        }
+                        Move-Item -LiteralPath $_.FullName -Destination $disabledAssembly
+                    }
+            }
+
             $destination = Join-Path $disabled $_.Name
+            if (-not $_.PSIsContainer -and ($_.Name -like '*.dll' -or $_.Name -like '*.dll.disabled')) {
+                $destination = Join-Path $disabled ($_.Name + '.disabled')
+            }
             if (Test-Path -LiteralPath $destination) {
                 throw "禁用目标已存在：$destination"
             }
@@ -220,6 +247,16 @@ function Restore-DisabledDirectoryTree {
     if (-not (Test-Path -LiteralPath $disabled -PathType Container)) {
         throw "找不到要恢复的禁用目录：$disabled"
     }
+
+    Get-ChildItem -LiteralPath $disabled -Recurse -File -Force |
+        Where-Object { $_.Name.EndsWith('.dll.disabled', [StringComparison]::OrdinalIgnoreCase) } |
+        ForEach-Object {
+            $destination = $_.FullName.Substring(0, $_.FullName.Length - '.disabled'.Length)
+            if (Test-Path -LiteralPath $destination) {
+                throw "恢复目标已存在：$destination"
+            }
+            Move-Item -LiteralPath $_.FullName -Destination $destination
+        }
 
     Get-ChildItem -LiteralPath $disabled -Force |
         ForEach-Object {

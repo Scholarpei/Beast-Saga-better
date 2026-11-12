@@ -83,8 +83,23 @@ try {
     }
     Then 'coexisting new and legacy plugin directories are rejected' {
         New-Item -ItemType Directory -Path (Join-Path $pluginRoot 'BeastSagaBetter'), (Join-Path $pluginRoot 'SafeDialogueTools') | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $pluginRoot 'SafeDialogueTools/nested') | Out-Null
+        $hiddenLegacyDll = Join-Path $pluginRoot 'SafeDialogueTools/nested/HiddenDependency.dll'
+        Set-Content -LiteralPath $hiddenLegacyDll -Value 'hidden-legacy-plugin'
+        attrib.exe +h $hiddenLegacyDll
         Assert-Throws '不能同时存在' { New-DeploymentPlan -ProjectRoot $projectRoot -GameDir $gameRoot }
         Remove-Item -LiteralPath (Join-Path $pluginRoot 'BeastSagaBetter'), (Join-Path $pluginRoot 'SafeDialogueTools') -Recurse -Force
+    }
+    Then 'an already disabled legacy directory does not require another migration' {
+        $legacy = Join-Path $pluginRoot 'SafeDialogueTools'
+        $newPlugin = Join-Path $pluginRoot 'BeastSagaBetter'
+        New-Item -ItemType Directory -Path (Join-Path $legacy '.disabled'), $newPlugin | Out-Null
+        Set-Content -LiteralPath (Join-Path $legacy '.disabled/SafeDialogueTools.dll.disabled') -Value 'legacy-plugin'
+        $plan = New-DeploymentPlan -ProjectRoot $projectRoot -GameDir $gameRoot
+        Require ($plan.PluginDir -eq $newPlugin) $plan.PluginDir
+        Require ($null -eq $plan.LegacyPluginDir) 'Inactive legacy directory was exposed as active'
+        Require (-not $plan.RequiresMigration) 'Inactive legacy directory requested migration'
+        Remove-Item -LiteralPath $legacy, $newPlugin -Recurse -Force
     }
     Then 'an explicit plugin directory is honored without auto-discovery' {
         $explicit = Join-Path $temporaryRoot 'explicit-plugin'
@@ -161,10 +176,22 @@ try {
         $legacy = Join-Path $temporaryRoot 'disable-legacy'
         New-Item -ItemType Directory -Path (Join-Path $legacy 'nested') | Out-Null
         Set-Content -LiteralPath (Join-Path $legacy 'SafeDialogueTools.dll') -Value 'legacy-plugin'
+        Set-Content -LiteralPath (Join-Path $legacy 'nested/dependency.dll') -Value 'dependency'
+        Set-Content -LiteralPath (Join-Path $legacy 'nested/Dependency.DLL') -Value 'uppercase-dependency'
+        $hiddenDependency = Join-Path $legacy 'nested/HiddenDependency.dll'
+        Set-Content -LiteralPath $hiddenDependency -Value 'hidden-dependency'
+        attrib.exe +h $hiddenDependency
         Set-Content -LiteralPath (Join-Path $legacy 'nested/metadata.txt') -Value 'metadata'
         Disable-DirectoryTree -Directory $legacy
-        Require (Test-Path -LiteralPath (Join-Path $legacy '.disabled/SafeDialogueTools.dll')) 'legacy DLL was not disabled'
+        Require (Test-Path -LiteralPath (Join-Path $legacy '.disabled/SafeDialogueTools.dll.disabled')) 'legacy DLL was not disabled'
+        Require (Test-Path -LiteralPath (Join-Path $legacy '.disabled/nested/dependency.dll.disabled')) 'nested DLL was not disabled'
+        Require (Test-Path -LiteralPath (Join-Path $legacy '.disabled/nested/Dependency.DLL.disabled')) 'uppercase nested DLL was not disabled'
+        Require (Test-Path -LiteralPath (Join-Path $legacy '.disabled/nested/HiddenDependency.dll.disabled')) 'hidden nested DLL was not disabled'
         Require (Test-Path -LiteralPath (Join-Path $legacy '.disabled/nested/metadata.txt')) 'nested content was not disabled'
+        Require (-not (Test-Path -LiteralPath (Join-Path $legacy '.disabled/SafeDialogueTools.dll'))) 'legacy DLL remained loadable'
+        Require (-not (Test-Path -LiteralPath (Join-Path $legacy '.disabled/nested/dependency.dll'))) 'nested DLL remained loadable'
+        Require (-not (Test-Path -LiteralPath (Join-Path $legacy '.disabled/nested/Dependency.DLL'))) 'uppercase nested DLL remained loadable'
+        Require (-not (Test-Path -LiteralPath (Join-Path $legacy '.disabled/nested/HiddenDependency.dll'))) 'hidden nested DLL remained loadable'
         $topLevelNames = @(Get-ChildItem -LiteralPath $legacy -Force | ForEach-Object { $_.Name })
         Require ($topLevelNames.Count -eq 1 -and $topLevelNames[0] -eq '.disabled') "top-level names: $($topLevelNames -join ', ')"
     }
@@ -172,9 +199,19 @@ try {
         $legacy = Join-Path $temporaryRoot 'restore-legacy'
         New-Item -ItemType Directory -Path $legacy | Out-Null
         Set-Content -LiteralPath (Join-Path $legacy 'SafeDialogueTools.dll') -Value 'legacy-plugin'
+        New-Item -ItemType Directory -Path (Join-Path $legacy 'nested') | Out-Null
+        Set-Content -LiteralPath (Join-Path $legacy 'nested/Dependency.DLL') -Value 'uppercase-dependency'
+        $hiddenDependency = Join-Path $legacy 'nested/HiddenDependency.dll'
+        Set-Content -LiteralPath $hiddenDependency -Value 'hidden-dependency'
+        attrib.exe +h $hiddenDependency
         Disable-DirectoryTree -Directory $legacy
         Restore-DisabledDirectoryTree -Directory $legacy
         Require (Test-Path -LiteralPath (Join-Path $legacy 'SafeDialogueTools.dll')) 'legacy DLL was not restored'
+        Require (Test-Path -LiteralPath (Join-Path $legacy 'nested/Dependency.DLL')) 'uppercase nested DLL was not restored'
+        Require (Test-Path -LiteralPath (Join-Path $legacy 'nested/HiddenDependency.dll')) 'hidden nested DLL was not restored'
+        Require (-not (Test-Path -LiteralPath (Join-Path $legacy 'nested/Dependency.DLL.disabled'))) 'uppercase nested DLL disabled suffix was not stripped'
+        Require (-not (Test-Path -LiteralPath (Join-Path $legacy 'nested/HiddenDependency.dll.disabled'))) 'hidden nested DLL disabled suffix was not stripped'
+        Require (-not (Test-Path -LiteralPath (Join-Path $legacy 'SafeDialogueTools.dll.disabled'))) 'disabled suffix was not stripped'
         Require (-not (Test-Path -LiteralPath (Join-Path $legacy '.disabled'))) 'disabled directory was not removed'
     }
 } finally {
