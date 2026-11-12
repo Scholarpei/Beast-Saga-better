@@ -102,7 +102,7 @@ function Backup-DirectoryTree {
     New-Item -ItemType Directory -Path $BackupDirectory | Out-Null
 
     $hashes = [ordered]@{}
-    $files = Get-ChildItem -LiteralPath $SourceDirectory -Recurse -File
+    $files = @(Get-ChildItem -LiteralPath $SourceDirectory -Recurse -File)
     foreach ($file in $files) {
         $relative = $file.FullName.Substring($SourceDirectory.Length).TrimStart('\', '/')
         $destination = Join-Path $BackupDirectory $relative

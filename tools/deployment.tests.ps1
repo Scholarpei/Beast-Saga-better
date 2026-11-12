@@ -105,6 +105,15 @@ try {
         Require (Test-Path -LiteralPath (Join-Path $backup 'nested/metadata.txt')) 'nested backup missing'
         Require ($result.Hashes.Count -eq 2) 'hash count mismatch'
     }
+    Then 'a legacy directory backup handles a single-file plugin' {
+        $source = Join-Path $temporaryRoot 'legacy-single-file-source'
+        $backup = Join-Path $temporaryRoot 'legacy-single-file-backup'
+        New-Item -ItemType Directory -Path $source | Out-Null
+        Set-Content -LiteralPath (Join-Path $source 'SafeDialogueTools.dll') -Value 'old-plugin'
+        $result = Backup-DirectoryTree -SourceDirectory $source -BackupDirectory $backup
+        Require ($result.FileCount -eq 1) "file count $($result.FileCount)"
+        Require ($result.Hashes.Count -eq 1) "hash count $($result.Hashes.Count)"
+    }
     Then 'verified temporary copies stay in the destination directory and match the source' {
         $destination = Join-Path $temporaryRoot 'destination'
         New-Item -ItemType Directory -Path $destination | Out-Null
