@@ -20,15 +20,16 @@ public static class CommandPanelState
         string? BlockedReason,
         IReadOnlyList<CheckpointSummary>? Archive = null,
         CheckpointSummary? ArchiveSelection = null,
-        bool FishingInstantSuccess = false)
+        bool FishingInstantSuccess = false,
+        bool Combat = false)
     {
         public string Status => Faulted ? "插件异常" : CheckpointsActive ? "存读档可用" : "存读档受限";
 
         public string Mode => Faulted ? "本次运行已停用" : IsTestCopy ? "隔离副本" : "正式目录";
 
-        public bool CanSave => CheckpointsActive && !Faulted && !Busy && !Loading && (!Dialogue || DialogueCheckpoint != null);
+        public bool CanSave => CheckpointsActive && !Combat && !Faulted && !Busy && !Loading && (!Dialogue || DialogueCheckpoint != null);
 
-        public bool CanLoad => CheckpointsActive && !Faulted && !Busy && !Loading;
+        public bool CanLoad => CheckpointsActive && !Combat && !Faulted && !Busy && !Loading;
 
         public string DialogueCheckpointText => DialogueCheckpoint is not null
             ? "已建立"

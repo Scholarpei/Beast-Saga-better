@@ -2,7 +2,7 @@
 
 用途：理解当前插件、定位改动位置。构建操作见[开发流程](development.md)，涉及游戏写入时继续读[安全约束](safety.md)。返回 [AGENTS.md](../../AGENTS.md)。
 
-本页按 2026-11-13 的工作区源码整理；功能状态是实现范围，不代表本次已逐项完成游戏内验收。
+本页按 2026-11-14 的工作区源码整理；功能状态是实现范围，不代表本次已逐项完成游戏内验收。
 
 ## 运行与构建关系
 
@@ -31,6 +31,7 @@ Core/（net6.0，独立项目）<—— ProjectReference —— Tests/（net8.0�
 | 物品搜索、分类、背包筛选、原生图标、添加、移除具体装备实例 | `Core/CheatItems.cs`、`Core/ItemEditSession.cs`、`Core/ItemDisplayPolicyCache.cs`、`Core/ItemIconBudget.cs` | `Plugin/ItemEditor.cs`、`Plugin/ItemPanel.cs`、`Plugin/ItemIcons.cs` | `Tests/ItemFeatureTests.cs` |
 | 当前地图选点、拖动和边缘移动相机、落点检查、退出恢复相机 | `Core/MapTeleportPolicy.cs`、`Core/MapTeleportCollision.cs` | `Plugin/MapTeleportController.cs`、输入 Gate | `Tests/MapTeleportTests.cs` |
 | 钓鱼立即成功、当前场景移动速度调整 | `Core/CheatPolicy.cs`、`Core/CheatPanel.cs` | `Plugin/Plugin.cs` 的钓鱼 Patch、`Plugin/CheatEditor.cs`、`Plugin/CheatPanel.cs` | `Tests/CheatFeatureTests.cs` |
+| 普通遭遇战中单人/全队恢复、二次确认击败当前敌方；战斗面板与独立权限 | `Core/CheatCombat.cs`、`Core/CombatPanelGeometry.cs` | `Plugin/CombatEditor.cs`、`Plugin/CombatFlowObserver.cs`、`Plugin/CombatPanel.cs`、输入 Gate | `Tests/CombatFeatureTests.cs` |
 | 沙箱测试命令、状态快照、原生读取诊断 | `Core/LoadRequestPolicy.cs` | `Plugin/TestBridge.cs`、`Plugin/SandboxPrefs.cs` | `tools/start-test.ps1`、`tools/send-test.ps1` |
 
 路径均相对仓库根目录。先读取相关行或方法，再扩大搜索范围；无需先通读体积较大的 `Plugin.cs`、`Indicators.cs` 或 `Tests/Program.cs`。
@@ -64,7 +65,7 @@ Core/（net6.0，独立项目）<—— ProjectReference —— Tests/（net8.0�
 
 以下是查阅源码时发现的边界，修改相关功能时先核对，不能据此自行扩充需求：
 
-1. **战斗分类未开放。** `CheatSectionCatalog` 将其标为 `Available = false`，徽标为“第二批”；其余分类开放不代表所有设想功能都已实现。
+1. **战斗适配范围有限。** 已开放普通场景遭遇战的手动操作；特殊目标、对话、倒计时、援军及未知状态禁用。原生流程观察器安装失败时保持禁用。单人遭遇战运行证据不能证明多队员、所有异常状态或剧情战斗已验收。
 2. **角色范围有限制。** 已认识但未入队的角色只开放好感；生活点按技能等级推导且只读；不能把未经确认的最终悟性或脚程显示成已知值。
 3. **各修改功能的检查点要求不同。** 物品增删强制要求 `CheckpointsActive`；角色/点数的 `EnsurePreEditCheckpoint()` 在未获建档 reservation 时会返回允许。不要描述为“所有修改都强制成功建档”，详见[写入保护](safety.md#游戏状态写入)。
 4. **配置帮助文本滞后。** `EnableCheckpoints` 的说明仍写“仅允许隔离副本”，实际 `SafetyPolicy.CanOperate()` 已支持“配置开启 + 正式授权标记”。以策略及调用为准。

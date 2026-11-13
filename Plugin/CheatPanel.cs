@@ -143,6 +143,11 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             DrawItemsPage(bounds);
             return;
         }
+        if (section.Section == CheatSection.Combat)
+        {
+            DrawCombatPage(bounds);
+            return;
+        }
         var reason = CheatEditor.EditBlockReason();
         var title = section.Label;
         var description = section.Section switch
@@ -161,6 +166,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             : cheatPillWarnStyle;
         DrawCheatPageHead(new Rect(bounds.x, bounds.y, bounds.width, CheatPageHeadHeight),
             title, description, pill, pillStyle);
+        if (reason != null)
+            GUI.Label(new Rect(bounds.x, bounds.y + 40, bounds.width, 22), reason, cheatSmallStyle);
         var content = new Rect(bounds.x, bounds.y + CheatPageHeadHeight,
             bounds.width, bounds.height - CheatPageHeadHeight);
         var previousEnabled = GUI.enabled;

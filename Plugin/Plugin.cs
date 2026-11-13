@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Diagnostics;
@@ -143,6 +143,7 @@ public sealed partial class Plugin : BasePlugin
         var harmony = new Harmony("scholarpei.beast-saga-better");
         harmony.PatchAll(typeof(Plugin).Assembly);
         ItemIcons.Initialize(harmony);
+        CombatFlowObserver.Initialize(harmony);
         AddComponent<RuntimeDriver>();
         Log.LogInfo($"Loaded 0.1.0; fingerprint={Fingerprint}; checkpoints={EnableCheckpoints.Value}; testCopy={TestMode}");
     }
@@ -262,7 +263,8 @@ public sealed partial class Plugin : BasePlugin
             var generation = Capture(CheckpointKind.Manual);
             Store.Select(generation);
             Tip("快速存档完成");
-            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration, CheatSessionState.ProtectedGeneration);
+            Store.Prune(new string?[] { DialogueCheckpoint, ItemEditor.RetainedGeneration, CheatSessionState.ProtectedGeneration }
+                .Concat(CombatEditor.RetainedGenerations).ToArray());
         }
         catch (Exception error) { Fail("保存失败，原读取目标保留", error, false); }
     }
@@ -318,7 +320,8 @@ public sealed partial class Plugin : BasePlugin
                 : title.Replace('\r', ' ').Replace('\n', ' ').Trim();
             if (conversation is { Length: > 120 }) conversation = conversation[..120];
             DialogueCheckpoint = Capture(CheckpointKind.PreDialogue, conversation);
-            Store.Prune(DialogueCheckpoint, ItemEditor.RetainedGeneration, CheatSessionState.ProtectedGeneration);
+            Store.Prune(new string?[] { DialogueCheckpoint, ItemEditor.RetainedGeneration, CheatSessionState.ProtectedGeneration }
+                .Concat(CombatEditor.RetainedGenerations).ToArray());
             Logger.LogInfo("Pre-dialogue checkpoint: " + title + " / " + DialogueCheckpoint);
         }
         catch (Exception error) { Fail("对话前检查点未建立，本轮对话中 F5 不可用", error, false); }
@@ -359,8 +362,10 @@ public sealed partial class Plugin : BasePlugin
     internal static void TogglePanel()
     {
         var reason = UnsafeReason(true);
-        var canShowPanel = reason is null or "正在对话";
+        var canShowPanel = reason is null or "正在对话" || CombatEditor.CanOpenInBattle;
+        var wasOpen = CommandPanelState.Open;
         CommandPanelState.Toggle(true, false, canShowPanel);
+        if (wasOpen && !CommandPanelState.Open) CombatEditor.PanelClosed();
         if (!canShowPanel)
         {
             PanelNoteEditing = false;
@@ -370,6 +375,11 @@ public sealed partial class Plugin : BasePlugin
         }
         if (CommandPanelState.Open)
         {
+            if (CombatEditor.InBattle)
+            {
+                CommandPanelState.SelectTab(CommandPanelTab.Cheats);
+                CommandPanelState.SelectCheatSection(CheatSection.Combat);
+            }
             RefreshPanelSelectedCheckpoint();
             RefreshPanelArchive();
         }
@@ -401,6 +411,7 @@ public sealed partial class Plugin : BasePlugin
         var dialogue = IsDialogue;
         if (previousDialogue && !dialogue) DialogueCheckpoint = null;
         previousDialogue = dialogue;
+        CombatEditor.Tick();
         ItemEditor.Tick();
         if (TestMode) TestBridge.Tick();
     }
@@ -429,7 +440,7 @@ public sealed partial class Plugin : BasePlugin
         return new CommandPanelState.State(
             CheckpointsActive, IsDialogue, Busy, Loading, Faulted, EnableIndicators.Value, TestMode,
             DialogueCheckpoint, PanelSelectedCheckpoint, UnsafeReason(IsDialogue), archive, selection,
-            EnableFishingInstantSuccess.Value);
+            EnableFishingInstantSuccess.Value, CombatEditor.BattleContext);
     }
 }
 
@@ -602,6 +613,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
 
     public void OnDestroy()
     {
+        CombatEditor.PanelClosed();
+        CombatEditor.Invalidate("插件销毁");
         ItemEditor.Reset("插件销毁");
         CheatEditor.ResetPreEditCheckpoint();
         MapTeleportController.Destroy();
@@ -635,8 +648,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
             MapTeleportController.Update();
             var panel = PanelKeyGate.ReadKeyDown(Plugin.PanelKey.Value);
             var close = PanelKeyGate.ReadKeyDown(Plugin.ClosePanelKey.Value);
-            var save = Plugin.CheckpointsActive && Input.GetKeyDown(Plugin.SaveKey.Value);
-            var load = Plugin.CheckpointsActive && Input.GetKeyDown(Plugin.LoadKey.Value);
+            var save = Plugin.CheckpointsActive && PanelKeyGate.ReadKeyDown(Plugin.SaveKey.Value);
+            var load = Plugin.CheckpointsActive && PanelKeyGate.ReadKeyDown(Plugin.LoadKey.Value);
             if (!Application.isFocused) return;
             if (CommandPanelState.Open && (panel || close))
             {
@@ -651,6 +664,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                     }
                     return;
                 }
+                CombatEditor.PanelClosed();
                 CommandPanelState.Close();
                 ItemEditor.Reset("面板关闭");
                 CheatEditor.ResetPreEditCheckpoint();
@@ -734,6 +748,7 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                 try { MapTeleportController.Close(string.Empty); }
                 catch { }
             }
+            CombatEditor.PanelClosed();
             CommandPanelState.Close();
             CheatEditor.ResetPreEditCheckpoint();
             Plugin.PanelNoteEditing = false;
@@ -820,7 +835,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var closeRect = new Rect(header.xMax - 18 * scale - closeWidth,
             header.y + (header.height - closeHeight) / 2, closeWidth, closeHeight);
         var statusRight = closeRect.x - 14 * scale;
-        var statusText = state.Faulted || state.BlockedReason is not null
+        var statusText = state.Combat && !state.Faulted ? "战斗中 · 存读档受限 · " + state.Mode
+            : state.Faulted || state.BlockedReason is not null
             ? "安全检查未通过 · " + state.Mode
             : "安全检查通过 · " + state.Mode;
         var statusSize = panelSubtitleStyle!.CalcSize(new GUIContent(statusText));
@@ -832,7 +848,8 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         DrawStatusDot(dot, state);
         if (GUI.Button(closeRect, "关闭面板", panelHeaderButtonStyle!))
         {
-            CommandPanelState.Open = false;
+            CombatEditor.PanelClosed();
+            CommandPanelState.Close();
             CheatEditor.ResetPreEditCheckpoint();
             Plugin.PanelNoteEditing = false;
         }

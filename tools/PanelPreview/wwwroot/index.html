@@ -64,6 +64,20 @@
     .detail-actions { display: flex; gap: 8px; margin-top: 9px; }
     footer { padding: 10px 16px 2px; color: #91a4be; font-size: calc(13px * var(--scale)); text-align: center; }
     .empty { grid-column: 1/-1; display: grid; place-items: center; color: #91a4be; }
+    .cheats-layout { width: 100%; min-height: 0; display: grid; grid-template-columns: minmax(130px,18%) minmax(0,1fr); gap: 16px; }
+    .cheat-nav { display: grid; grid-template-rows: repeat(6,minmax(34px,1fr)); gap: 8px; padding: 10px; background: #111b29; }
+    .cheat-nav button,.combat-buttons button { padding: 10px; border: 1px solid #2c495a; border-radius: 4px; background: #182b39; color: #c3dce8; font: inherit; cursor: pointer; }
+    .cheat-nav button.active { color: #9aeaf4; background: #23404c; }
+    .combat-page { overflow-y: auto; padding: 0 14px 16px 0; font-size: calc(15px * var(--scale)); }
+    .combat-page h3 { margin: 0 0 12px; font-size: 1.3em; }
+    .combat-page p { line-height: 1.5; overflow-wrap: anywhere; }
+    .combat-units { display: grid; gap: 8px; margin: 15px 0; }
+    .combat-unit { display: block; padding: 12px; border-radius: 4px; background: #142331; line-height: 1.6; }
+    .combat-buttons { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+    .combat-buttons button { flex: 1 1 180px; }
+    .combat-buttons button:disabled { opacity: .4; cursor: default; }
+    .combat-confirm { border: 1px solid #bc8e40; background: #2a261d; padding: 12px; }
+    .combat-demo { color: #8da6bb; font-size: .85em; }
   </style>
 </head>
 <body>
@@ -73,10 +87,13 @@
   <label>宽 <input id=width type=number min=640 max=3840 value=2560></label>
   <label>高 <input id=height type=number min=480 max=2160 value=1440></label>
   <button id=reload>重载数据</button><span id=root></span>
+  <label>战斗演示 <select id=combat-mode><option value=ready>可操作</option><option value=blocked>技能执行中</option><option value=confirm>二次确认</option><option value=busy>原生处理与结果</option></select></label>
 </div>
 <div class=stage><div id=screen class=screen></div></div>
 <script>
 let state, selected = null, notes = {}, tab = 'archive', noteEditing = false, sortMode = 'captured', filter = 'All', fishingCheat = false;
+let combatMode = 'ready', cheatSection = '战斗', combatRestored = false;
+document.getElementById('combat-mode').onchange = event => { combatMode = event.target.value; tab = 'cheats'; cheatSection = '战斗'; render(); };
 const screenEl = document.getElementById('screen');
 document.getElementById('resolution').onchange = event => { if (event.target.value !== '自定义') [width.value,height.value] = event.target.value.split('×'); render(); };
 document.getElementById('width').oninput = render;
@@ -103,9 +120,26 @@ function render() {
   const noteView = screenEl.querySelector('.note-view'); if (noteView) noteView.onclick = () => { noteEditing = true; render(); }; const note = screenEl.querySelector('textarea'); if (note) { note.oninput = () => notes[current.generation] = note.value; note.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); noteEditing = false; render(); } }; note.onblur = () => { noteEditing = false; render(); }; }
   const close = screenEl.querySelector('.close-panel'); if (close) close.onclick = () => { tab = 'archive'; noteEditing = false; screenEl.innerHTML = ''; };
   const cheat = screenEl.querySelector('.cheat-fishing'); if (cheat) cheat.onchange = () => { fishingCheat = cheat.checked; render(); };
+  screenEl.querySelectorAll('[data-cheat-section]').forEach(button => button.onclick = () => { cheatSection = button.dataset.cheatSection; render(); });
+  screenEl.querySelectorAll('[data-combat-restore]').forEach(button => button.onclick = () => { combatRestored = true; render(); });
+  const defeat = screenEl.querySelector('[data-combat-defeat]'); if (defeat) defeat.onclick = () => { combatMode = 'confirm'; render(); };
+  const confirmCombat = screenEl.querySelector('[data-combat-confirm]'); if (confirmCombat) confirmCombat.onclick = () => { combatMode = 'busy'; render(); };
+  const cancelCombat = screenEl.querySelector('[data-combat-cancel]'); if (cancelCombat) cancelCombat.onclick = () => { combatMode = 'ready'; render(); };
 }
 function statusHtml() { return `<section class=status-pane><div class=card><div class=section>状态</div><div class=row><span>运行模式</span><span>${state.state.mode}</span></div><div class=row><span>对话前</span><span>${state.state.dialogueCheckpoint}</span></div><div class=row><span>读取目标</span><span>${state.state.selectedCheckpoint||'未选择'}</span></div><p class=blocked>${state.state.blocked}</p></div><div class=card><div class=section>快速操作</div><div class=actions><button class=action>快速保存</button><button class=action>读取检查点</button><button class=action>地图传送</button></div></div><div class=card><div class=section>辅助</div><label class=toggle><input type=checkbox checked> 悬停显示判定与未来预览</label></div></section>`; }
-function cheatsHtml() { return `<section class=status-pane><div class=card><div class=section>修改作弊</div><label class=toggle><input class=cheat-fishing type=checkbox ${fishingCheat?'checked':''}> 钓鱼直接成功</label><p class=blocked>钓鱼开始后进度条自动拉满，并立即结算成功。</p></div><div class=card><div class=section>更多功能</div><p class=blocked>更多修改功能将在此页陆续加入。</p></div></section>`; }
+function cheatsHtml() {
+  const other = cheatSection==='其他'
+    ? `<label class=toggle><input class=cheat-fishing type=checkbox ${fishingCheat?'checked':''}> 钓鱼直接成功</label><p>钓鱼开始后进度条自动拉满，并立即结算成功；仅非战斗安全场景可修改。</p>`
+    : '<p>战斗期间普通修改不可用。</p>';
+  const body = cheatSection==='战斗' ? combatHtml() : `<article class=combat-page><h3>${cheatSection}</h3>${other}<p class=combat-demo>此页只展示布局；真实功能与权限以游戏内状态为准。</p></article>`;
+  return `<section class=cheats-layout><nav class=cheat-nav>${['角色属性','点数','物品','战斗','世界','其他'].map(name => `<button data-cheat-section="${name}" class="${name===cheatSection?'active':''}">${name}</button>`).join('')}</nav>${body}</section>`;
+}
+function combatHtml() {
+  const disabled = combatMode !== 'ready' ? 'disabled' : '';
+  const checkpoint = '2026/11/13 22:00:00 · 遭遇前地图 · Lv.11 · 第1周目 第8天（执行时完整校验）';
+  const reason = combatMode==='blocked'?'正在移动、攻击或执行技能；本次确认已取消。':combatMode==='busy'?'已提交原生死亡流程，正在等待游戏结算；本场不会再次提交。':'当前为我方手动回合，可以提交操作';
+  return `<article class=combat-page><h3>战斗</h3><p>${reason}</p><p>战前检查点：${checkpoint}</p><p class=combat-demo>演示数据，仅用于布局核对。恢复不复活、不清异常；击败处理当前敌方，胜负由游戏判定。</p><div class=combat-units>${['主角','队友'].map((name,i) => `<label class=combat-unit><input type=radio name=combat-unit ${i===0?'checked':''}> ${name}<br>气血 ${combatRestored?'100':'35'}/100 · 护甲 ${combatRestored?'50':'10'}/50 · 真气 ${combatRestored?'30':'6'}/30</label>`).join('')}<label class=combat-unit>已倒下队友 · 已死亡<br>气血 0/100（跳过恢复）</label></div><div class=combat-buttons><button data-combat-restore ${disabled}>恢复选中单位</button><button data-combat-restore ${disabled}>恢复我方全队</button></div><div class=combat-buttons><button data-combat-defeat ${disabled}>击败当前全部敌人（3）</button></div>${combatMode==='confirm'?`<div class=combat-confirm><p>确认处理当前 3 名敌人？胜负、死亡和奖励由游戏判定。</p><p>回退点：${checkpoint}</p><p>检查点仅能在游戏允许的安全状态读取。</p><div class=combat-buttons><button data-combat-confirm>确认击败</button><button data-combat-cancel>取消</button></div></div>`:''}${combatRestored?'<p>恢复结果演示：气血 35→100/100，护甲 10→50/50，真气 6→30/30；死亡单位跳过。</p>':''}</article>`;
+}
 function archiveHtml(items,current) { const currentNote=notes[current.generation]||''; return `<section class=archive><div class=list><div class=list-header><span>共 ${state.state.archiveCount} 份 · 手动 ${state.state.manualCount} · 对话前 ${state.state.dialogueCount}</span><button class=sort>${sortMode==='captured'?'按存档时间':'按游戏时间'}</button></div><div class=filters>${[['All','全部'],['Manual','手动'],['PreDialogue','对话前']].map(([value,label]) => `<button class="filter ${filter===value?'active':''}" data-filter=${value}>${label}</button>`).join('')}</div>${items.map(item => { const note=notes[item.generation]||''; const top=item.kind==='PreDialogue'&&item.conversation?`${text(item.capturedAt,'时间未知')} · ${item.conversation}`:text(item.capturedAt,'时间未知'); const badge=item.kind==='PreDialogue'?(item.selected?'对话前·目标':'对话前'):(note?'已备注':item.selected?'读取目标':item.hasScreenshot?'F5 历史':'无截图'); return `<button class="item ${item.generation===current.generation?'active':''}" data-generation=${item.generation}><span class=item-top><span>${top}</span><span class=badge>${badge}</span></span><span class=item-detail>${text(item.mapName,'未知地图')} · Lv.${item.playerLevel??'?'} · 第${item.round??'?'}周目 第${item.day??'?'}天</span><span class="item-note ${note?'has-note':''}">${note||'未写备注'}</span></button>` }).join('')}</div><article class="detail ${current.hasScreenshot?'':'no-shot'}"><div class=shot>${itemImage(current)}</div><div class=detail-info><div class=detail-grid><span><strong>类型</strong>${current.kind==='PreDialogue'?'对话前自动检查点':'手动 F5 存档'}</span><span><strong>对话</strong>${current.conversation||'—'}</span><span><strong>保存时间</strong>${text(current.capturedAt,'时间未知')}</span><span><strong>地图</strong>${text(current.mapName,'未知地图')}</span><span><strong>等级</strong>Lv.${current.playerLevel??'?'}</span><span><strong>游戏时间</strong>第${current.round??'?'}周目 第${current.day??'?'}天</span><span><strong>读取状态</strong>${current.selected?'当前读取目标':'未设为读取目标'}</span><span><strong>截图</strong>${current.hasScreenshot?'1280×720 截图（旧档可能 320×180）':'不可用'}</span></div><div class=note><div class=note-label><span>备注</span></div>${noteEditing?`<textarea>${currentNote}</textarea>`:`<div class="note-view ${currentNote?'':'empty'}">${currentNote||'未写备注'}</div>`}<div class=detail-actions><button class=action>备注仅预览，不写回</button></div></div></div></article></section>`; }
 function sortArchive(items) { if (sortMode === 'captured') return [...items].sort((a,b) => Date.parse(b.capturedAt)-Date.parse(a.capturedAt)); const known = items.filter(x => x.round != null && x.day != null); const unknown = items.filter(x => x.round == null || x.day == null); return known.sort((a,b) => (b.round-a.round) || (b.day-a.day) || Date.parse(b.capturedAt)-Date.parse(a.capturedAt)).concat(unknown); }
 function itemImage(item) { return item.hasScreenshot ? `<img src="${item.screenshotUrl}" alt="存档截图">` : `<span class=placeholder>${item.kind==='PreDialogue'?'对话前自动检查点<br>无缩略截图':'截图不可用'}</span>`; }

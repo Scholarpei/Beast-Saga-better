@@ -9,7 +9,7 @@ internal static class PanelMouseButtonGate
 {
     private static bool Prefix(ref bool __result)
     {
-        if (!MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
+        if (CombatEditor.BlockGameInput || !MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
             CommandPanelState.Open && CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y))
         {
             __result = false;
@@ -24,7 +24,7 @@ internal static class PanelMouseButtonDownGate
 {
     private static bool Prefix(ref bool __result)
     {
-        if (!MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
+        if (CombatEditor.BlockGameInput || !MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
             CommandPanelState.Open && CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y))
         {
             __result = false;
@@ -39,7 +39,7 @@ internal static class PanelMouseButtonUpGate
 {
     private static bool Prefix(ref bool __result)
     {
-        if (!MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
+        if (CombatEditor.BlockGameInput || !MapTeleportController.ReadingOwnInput && MapTeleportMode.Active ||
             CommandPanelState.Open && CommandPanelState.IsPointerBlocked(Input.mousePosition.x, Input.mousePosition.y))
         {
             __result = false;
@@ -54,6 +54,7 @@ internal static class PanelMouseWheelAxisGate
 {
     private static void Postfix(string axisName, ref float __result)
     {
+        if (CombatEditor.BlockGameInput) { __result = 0; return; }
         if (__result != 0 && MapTeleportMode.Active && MapTeleportAxisPolicy.IsMovementAxis(axisName)) __result = 0;
         if (__result == 0 || !CommandPanelState.ShouldBlockMouseWheel(axisName, Input.mousePosition.x, Input.mousePosition.y)) return;
         __result = 0;
@@ -72,6 +73,7 @@ internal static class PanelMouseWheelRawAxisGate
 {
     private static void Postfix(string axisName, ref float __result)
     {
+        if (CombatEditor.BlockGameInput) { __result = 0; return; }
         if (__result != 0 && MapTeleportMode.Active && MapTeleportAxisPolicy.IsMovementAxis(axisName)) __result = 0;
         if (__result == 0 || !CommandPanelState.ShouldBlockMouseWheel(axisName, Input.mousePosition.x, Input.mousePosition.y)) return;
         __result = 0;
@@ -83,6 +85,7 @@ internal static class PanelMouseScrollDeltaGate
 {
     private static void Postfix(ref Vector2 __result)
     {
+        if (CombatEditor.BlockGameInput) { __result = Vector2.zero; return; }
         if (__result.y == 0 || !CommandPanelState.ShouldBlockMouseWheel("Mouse ScrollWheel", Input.mousePosition.x, Input.mousePosition.y)) return;
         __result.y = 0;
     }
