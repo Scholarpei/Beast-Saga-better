@@ -166,9 +166,11 @@ internal static class CheckpointHistoryTests
                 using var gate = AcquireDataRootLock(Path.GetDirectoryName(lockRoot)!);
                 var read = Task.Run(() => lockedStore.Selected());
                 var cleanup = Task.Run(() => workStore.CleanupExcept(null));
-                Require(!read.Wait(100) && !cleanup.Wait(100), "operations bypassed the data-root lock");
+                var preparation = Task.Run(() => workStore.Prepare());
+                Require(!read.Wait(100) && !cleanup.Wait(100) && !preparation.Wait(100),
+                    "operations bypassed the data-root lock");
                 gate.Dispose();
-                Require(read.Wait(5000) && cleanup.Wait(5000));
+                Require(read.Wait(5000) && cleanup.Wait(5000) && preparation.Wait(5000));
             });
 
             Test("selection snapshots cannot race checkpoint deletion", () =>
@@ -196,7 +198,7 @@ internal static class CheckpointHistoryTests
                 first.Validate(generationB);
             });
 
-            Test("load-work cleanup cannot race a newly prepared directory", () =>
+            Test("load-work prepared after cleanup preserves active and new directories", () =>
             {
                 var workRoot = Path.Combine(root, "load-work-race");
                 var store = new LoadWorkStore(workRoot);
@@ -204,7 +206,13 @@ internal static class CheckpointHistoryTests
                 using var gate = AcquireDataRootLock(Path.GetDirectoryName(workRoot)!);
                 var cleanup = Task.Run(() => store.CleanupExcept(Path.GetFileName(active)));
                 string? prepared = null;
-                var preparation = Task.Run(() => prepared = new LoadWorkStore(workRoot).Prepare());
+                // A mutex serializes operations but does not guarantee FIFO acquisition.
+                // Match LoadPressed: finish cleanup before preparing the next work directory.
+                var preparation = Task.Run(async () =>
+                {
+                    await cleanup;
+                    prepared = new LoadWorkStore(workRoot).Prepare();
+                });
                 Require(!cleanup.Wait(100) && !preparation.Wait(100), "load-work operations bypassed the data-root lock");
                 gate.Dispose();
                 Task.WaitAll(cleanup, preparation);
