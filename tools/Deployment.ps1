@@ -77,7 +77,7 @@ function New-DeploymentPlan {
         $legacyDisabled = $disabledDlls.Count -eq 0
     }
     if ($newExists -and $legacyExists -and -not $legacyDisabled) {
-        throw "新旧插件目录不能同时存在：$defaultPluginDir / $legacyPluginDir。请确认后只保留一个，或用 -PluginDir 显式指定目标。"
+        throw "新旧插件目录不能同时存在：$defaultPluginDir / $legacyPluginDir。请先确认并停用多余插件；-PluginDir 只选择目标，不绕过此检查。"
     }
 
     $requiresMigration = $false
@@ -111,10 +111,19 @@ function Backup-DirectoryTree {
     if (Test-Path -LiteralPath $BackupDirectory) {
         throw "备份目录已存在：$BackupDirectory"
     }
+    $SourceDirectory = [IO.Path]::GetFullPath($SourceDirectory).TrimEnd('\', '/')
+    $entries = @(Get-Item -LiteralPath $SourceDirectory -Force) + @(Get-ChildItem -LiteralPath $SourceDirectory -Recurse -Force)
+    if (@($entries | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count -ne 0) {
+        throw "备份拒绝重解析点：$SourceDirectory"
+    }
     New-Item -ItemType Directory -Path $BackupDirectory | Out-Null
+    foreach ($directory in @($entries | Where-Object { $_.PSIsContainer })) {
+        $relative = [IO.Path]::GetRelativePath($SourceDirectory, $directory.FullName)
+        New-Item -ItemType Directory -Path (Join-Path $BackupDirectory $relative) -Force | Out-Null
+    }
 
     $hashes = [ordered]@{}
-    $files = @(Get-ChildItem -LiteralPath $SourceDirectory -Recurse -File)
+    $files = @($entries | Where-Object { -not $_.PSIsContainer })
     foreach ($file in $files) {
         $relative = $file.FullName.Substring($SourceDirectory.Length).TrimStart('\', '/')
         $destination = Join-Path $BackupDirectory $relative
@@ -128,6 +137,39 @@ function Backup-DirectoryTree {
     }
 
     [pscustomobject]@{ FileCount = $files.Count; Hashes = $hashes }
+}
+
+function Assert-DeploymentChildPath {
+    param([string] $Path, [string] $Root)
+
+    $absoluteRoot = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    $absolutePath = [IO.Path]::GetFullPath($Path)
+    if (-not $absolutePath.StartsWith($absoluteRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "部署路径超出预期目录：$absolutePath / $absoluteRoot"
+    }
+    $ancestor = $absolutePath
+    while ($ancestor.Length -ge $absoluteRoot.Length) {
+        if (Test-Path -LiteralPath $ancestor) {
+            if ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "部署路径含重解析点：$ancestor"
+            }
+        }
+        $ancestor = Split-Path -Parent $ancestor
+    }
+}
+
+function Restore-DeploymentDirectoryBackup {
+    param([string] $BackupDirectory, [string] $Directory, [string] $AllowedRoot)
+
+    Assert-DeploymentChildPath -Path $Directory -Root $AllowedRoot
+    $staging = Join-Path (Split-Path -Parent $Directory) ('.rollback-' + [guid]::NewGuid().ToString('N'))
+    Assert-DeploymentChildPath -Path $staging -Root $AllowedRoot
+    # Verify a complete independent replacement before removing partially migrated files.
+    Backup-DirectoryTree -SourceDirectory $BackupDirectory -BackupDirectory $staging | Out-Null
+    if (Test-Path -LiteralPath $Directory) {
+        Remove-Item -LiteralPath $Directory -Recurse -Force
+    }
+    Move-Item -LiteralPath $staging -Destination $Directory
 }
 
 function New-VerifiedTemporaryCopy {
@@ -206,6 +248,7 @@ function Disable-DirectoryTree {
         throw "找不到要禁用的目录：$Directory"
     }
     $disabled = Join-Path $Directory '.disabled'
+    Assert-DeploymentChildPath -Path $disabled -Root $Directory
     if (Test-Path -LiteralPath $disabled) {
         throw "禁用目录已存在：$disabled"
     }
@@ -222,6 +265,8 @@ function Disable-DirectoryTree {
                         if (Test-Path -LiteralPath $disabledAssembly) {
                             throw "禁用目标已存在：$disabledAssembly"
                         }
+                        Assert-DeploymentChildPath -Path $_.FullName -Root $Directory
+                        Assert-DeploymentChildPath -Path $disabledAssembly -Root $Directory
                         Move-Item -LiteralPath $_.FullName -Destination $disabledAssembly
                     }
             }
@@ -233,6 +278,8 @@ function Disable-DirectoryTree {
             if (Test-Path -LiteralPath $destination) {
                 throw "禁用目标已存在：$destination"
             }
+            Assert-DeploymentChildPath -Path $_.FullName -Root $Directory
+            Assert-DeploymentChildPath -Path $destination -Root $Directory
             Move-Item -LiteralPath $_.FullName -Destination $destination
         }
 }
@@ -255,6 +302,8 @@ function Restore-DisabledDirectoryTree {
             if (Test-Path -LiteralPath $destination) {
                 throw "恢复目标已存在：$destination"
             }
+            Assert-DeploymentChildPath -Path $_.FullName -Root $Directory
+            Assert-DeploymentChildPath -Path $destination -Root $Directory
             Move-Item -LiteralPath $_.FullName -Destination $destination
         }
 
@@ -264,6 +313,8 @@ function Restore-DisabledDirectoryTree {
             if (Test-Path -LiteralPath $destination) {
                 throw "恢复目标已存在：$destination"
             }
+            Assert-DeploymentChildPath -Path $_.FullName -Root $Directory
+            Assert-DeploymentChildPath -Path $destination -Root $Directory
             Move-Item -LiteralPath $_.FullName -Destination $destination
         }
     Remove-Item -LiteralPath $disabled

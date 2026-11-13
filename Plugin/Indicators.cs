@@ -98,6 +98,9 @@ internal static class Indicators
     private static bool TryGetPairedItemCountExpression(DialogueEntry entry, out string expression)
     {
         expression = "";
+        // The paired checks run after this node's script. The current inventory
+        // is only suitable for a headline when no preceding script can change it.
+        if (!string.IsNullOrWhiteSpace(entry.userScript) || !string.IsNullOrWhiteSpace(entry.Sequence)) return false;
         var links = entry.outgoingLinks;
         if (links == null || links.Count != 2 || DialogueManager.masterDatabase == null) return false;
         var first = DialogueManager.masterDatabase.GetDialogueEntry(links[0]);
@@ -132,7 +135,7 @@ internal static class Indicators
     {
         var paths = new List<(IReadOnlyList<FutureScriptEffect> Effects, IReadOnlyList<string> Stops, bool Certain)>();
         {
-            var queue = new List<(DialogueEntry Node, List<FutureScriptEffect> Path, List<string> PathStops, HashSet<string> Visited, Dictionary<string, double> ItemCounts)> { (entry, new(), new(), new(), ReadInitialItemCounts()) };
+            var queue = new List<(DialogueEntry Node, List<FutureScriptEffect> Path, List<string> PathStops, HashSet<string> Visited, Dictionary<string, double?> ItemCounts)> { (entry, new(), new(), new(), new(StringComparer.Ordinal)) };
             var explored = 0;
             var duplicateNodes = new HashSet<string>();
             while (queue.Count > 0 && paths.Count < 8 && explored < 48)
@@ -159,6 +162,11 @@ internal static class Indicators
                     paths.Add((current.Path, current.PathStops, false));
                     continue;
                 }
+                // Entry conditions are evaluated before this node's userScript.
+                // Its own effects must not invalidate an already successful check.
+                var nativeCheckSpec = CheckPreview.Parse(current.Node.conditionsString ?? "");
+                var nativeLifeCheckPassed = nativeCheckSpec is { Function: "IsPlayerLife" or "IsPlayer2Life", Operation: "大于等于" } &&
+                    EvaluateCheck(current.Node.conditionsString!, nativeCheckSpec, current.Path) == true;
                 var script = FutureScriptPreview.Parse(current.Node.userScript);
                 current.Path.AddRange(script.Effects);
                 if (script.StopReason != null)
@@ -193,34 +201,46 @@ internal static class Indicators
                     continue;
                 }
                 var successors = new List<DialogueEntry>();
-                var childItemCounts = new Dictionary<string, double>(current.ItemCounts);
+                var childItemCounts = new Dictionary<string, double?>(current.ItemCounts);
                 ApplyItemEffects(childItemCounts, script.Effects);
-                var nativeCheckSpec = CheckPreview.Parse(current.Node.conditionsString ?? "");
-                if (nativeCheckSpec is { Function: "IsPlayerLife" or "IsPlayer2Life", Operation: "大于等于" } &&
-                    CheckPreview.Evaluate(current.Node.conditionsString!, (function, attribute) => ReadValue(nativeCheckSpec)).Passed == true)
+                if (nativeLifeCheckPassed)
                 {
-                    var nativeLifeGain = Math.Truncate(nativeCheckSpec.Threshold * 0.01);
+                    var nativeLifeGain = Math.Truncate(nativeCheckSpec!.Threshold * 0.01);
                     if (nativeLifeGain > 0) current.Path.Add(new FutureScriptEffect("life-exp", nativeCheckSpec.Attribute, nativeLifeGain));
                 }
-                foreach (var link in links)
+                var unknownSuccessor = false;
+                // Native evaluation stops at the first priority with a valid response.
+                // Unknown higher-priority conditions remain a stopped possible path.
+                foreach (var priority in EnumerateLinks(links).GroupBy(link => link.priority).OrderByDescending(group => (int)group.Key))
                 {
-                    var next = DialogueManager.masterDatabase?.GetDialogueEntry(link);
-                    if (next == null || successors.Contains(next)) continue;
-                    if (!string.IsNullOrWhiteSpace(next.conditionsString))
+                    foreach (var link in priority)
                     {
-                        var checkSpec = CheckPreview.Parse(next.conditionsString);
-                        var itemSpec = CheckPreview.ParseItemCount(next.conditionsString);
-                        var visible = checkSpec != null
-                            ? CheckPreview.Evaluate(next.conditionsString, (function, attribute) => ReadValue(checkSpec)).Passed == true
-                            : itemSpec != null
-                                ? EvaluateExpected(itemSpec, childItemCounts)
-                                : VariableConditionIsTrue(next.conditionsString);
-                        if (visible != true) continue;
+                        var next = DialogueManager.masterDatabase?.GetDialogueEntry(link);
+                        if (next == null || successors.Contains(next)) continue;
+                        if (!string.IsNullOrWhiteSpace(next.conditionsString))
+                        {
+                            var checkSpec = CheckPreview.Parse(next.conditionsString);
+                            var itemSpec = CheckPreview.ParseItemCount(next.conditionsString);
+                            var visible = checkSpec != null
+                                ? EvaluateCheck(next.conditionsString, checkSpec, current.Path)
+                                : itemSpec != null
+                                    ? EvaluateExpected(itemSpec, childItemCounts)
+                                    : VariableConditionIsTrue(next.conditionsString, current.Path);
+                            if (visible == null) unknownSuccessor = true;
+                            if (visible != true) continue;
+                        }
+                        successors.Add(next);
                     }
-                    successors.Add(next);
+                    if (successors.Count > 0) break;
+                }
+                if (unknownSuccessor)
+                {
+                    var stops = new List<string>(current.PathStops) { links.Count > 1 ? "后续有分支条件未知，未继续预测" : "后续条件未知，未继续预测" };
+                    paths.Add((new List<FutureScriptEffect>(current.Path), stops, false));
                 }
                 if (successors.Count == 0)
                 {
+                    if (unknownSuccessor) continue;
                     var chosen = ChoosePairedItemCountSuccessor(EnumerateLinks(links), childItemCounts);
                     if (chosen == null)
                     {
@@ -228,17 +248,21 @@ internal static class Indicators
                         paths.Add((current.Path, current.PathStops, false));
                         continue;
                     }
-                    queue.Add((chosen, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited), new Dictionary<string, double>(childItemCounts)));
+                    queue.Add((chosen, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited), new Dictionary<string, double?>(childItemCounts)));
                     duplicateNodes.Add(chosen.conversationID + ":" + chosen.id);
                     continue;
                 }
                 var ancestorSuccessors = successors
                     .Where(next => current.Visited.Contains(next.conversationID + ":" + next.id))
                     .ToList();
-                if (ancestorSuccessors.Count > 0) successors = ancestorSuccessors;
+                // A selected PC return option leads back to its own response menu.
+                // Stop that selection, but do not give unrelated ancestor links priority.
+                if (DialogueManager.masterDatabase?.GetActor(entry.ActorID)?.IsPlayer == true &&
+                    ancestorSuccessors.Any(next => next.conversationID == entry.conversationID && next.id == entry.id))
+                    successors = ancestorSuccessors.Where(next => next.conversationID == entry.conversationID && next.id == entry.id).ToList();
                 foreach (var next in successors)
                 {
-                    queue.Add((next, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited), new Dictionary<string, double>(childItemCounts)));
+                    queue.Add((next, new List<FutureScriptEffect>(current.Path), new List<string>(current.PathStops), new HashSet<string>(current.Visited), new Dictionary<string, double?>(childItemCounts)));
                     if (current.Visited.Contains(next.conversationID + ":" + next.id)) duplicateNodes.Add(next.conversationID + ":" + next.id);
                 }
                 continue;
@@ -261,7 +285,7 @@ internal static class Indicators
         else
         {
             var pathEffects = paths
-                .Select(path => (Lines: path.Effects.SelectMany(effect => FormatEffects(new List<FutureScriptEffect> { effect })).GroupBy(line => line).Select(group => group.First()).ToList(), Stops: path.Stops))
+                .Select(path => (Lines: FormatEffects(path.Effects.ToList()), Stops: path.Stops))
                 .ToList();
             var common = new HashSet<string>(pathEffects[0].Lines);
             foreach (var path in pathEffects.Skip(1)) common.IntersectWith(path.Lines);
@@ -272,7 +296,7 @@ internal static class Indicators
             }
             var backtrackOnly = pathEffects
                 .Select((path, index) => (Index: index, path.Lines, path.Stops))
-                .Where(path => path.Stops.All(stop => stop == "可回溯" || stop == "对话会回到已预测内容"))
+                .Where(path => path.Stops.Count > 0 && path.Stops.All(stop => stop == "可回溯" || stop == "对话会回到已预测内容"))
                 .ToList();
             var meaningful = pathEffects
                 .Select((path, index) => (Index: index, path.Lines, path.Stops))
@@ -302,7 +326,7 @@ internal static class Indicators
         return lines.Count == 0 ? null : lines;
     }
 
-    private static DialogueEntry? ChoosePairedItemCountSuccessor(System.Collections.IEnumerable links, IReadOnlyDictionary<string, double> itemCounts)
+    private static DialogueEntry? ChoosePairedItemCountSuccessor(System.Collections.IEnumerable links, IReadOnlyDictionary<string, double?> itemCounts)
     {
         if (DialogueManager.masterDatabase == null) return null;
         var candidates = new List<DialogueEntry?>();
@@ -321,37 +345,43 @@ internal static class Indicators
         return chosen;
     }
 
-    private static void ApplyItemEffects(Dictionary<string, double> counts, IReadOnlyList<FutureScriptEffect> effects)
+    private static void ApplyItemEffects(Dictionary<string, double?> counts, IReadOnlyList<FutureScriptEffect> effects)
     {
         foreach (var effect in effects)
         {
             if (effect.Kind != "item") continue;
-            counts.TryGetValue(effect.Target, out var count);
+            if (!counts.TryGetValue(effect.Target, out var count)) count = ReadItemCount(effect.Target);
             counts[effect.Target] = count + effect.Amount;
         }
     }
 
-    private static Dictionary<string, double> ReadInitialItemCounts()
+    private static bool? EvaluateCheck(string expression, CheckSpec spec, IReadOnlyList<FutureScriptEffect> path)
     {
-        var counts = new Dictionary<string, double>(StringComparer.Ordinal);
-        return counts;
+        // Native attribute/life checks include party maxima and derived bonuses.
+        // Do not substitute pre-script values after changes that can affect them.
+        if (path.Any(effect => effect.Kind is "friend-add" or "friend-leave" ||
+            (spec.Function == "IsPlayerPro" ? effect.Kind == "attribute" && effect.Target == spec.Attribute : effect.Kind == "life-exp"))) return null;
+        return CheckPreview.Evaluate(expression, (function, attribute) => ReadValue(spec)).Passed;
     }
 
-    private static bool VariableConditionIsTrue(string expression)
+    private static bool? VariableConditionIsTrue(string expression, IReadOnlyList<FutureScriptEffect> path)
     {
         var spec = CheckPreview.ParseVariableEquality(expression);
-        if (spec != null) return VariableEquals(spec) == true;
+        if (spec != null) return path.Any(effect => effect.Kind == "variable" && effect.Target == spec.Variable) ? null : VariableEquals(spec);
 
         var alternatives = SplitTopLevel(expression, "or");
-        if (alternatives.Count < 2) return false;
+        if (alternatives.Count < 2) return null;
         var values = new Dictionary<string, VariableValue>(StringComparer.Ordinal);
+        var unknown = false;
         foreach (var alternative in alternatives)
         {
             var equality = CheckPreview.ParseVariableEquality(StripOuterParentheses(alternative.Trim()));
-            if (equality == null) continue;
-            if (VariableEquals(equality, values) == true) return true;
+            if (equality == null || path.Any(effect => effect.Kind == "variable" && effect.Target == equality.Variable)) { unknown = true; continue; }
+            var value = VariableEquals(equality, values);
+            if (value == true) return true;
+            if (value == null) unknown = true;
         }
-        return false;
+        return unknown ? null : false;
     }
 
     private static bool? VariableEquals(VariableEqualitySpec spec, Dictionary<string, VariableValue>? values = null)
@@ -520,7 +550,7 @@ internal static class Indicators
         return EvaluateExpected(spec, null);
     }
 
-    private static bool? EvaluateExpected(ItemCountSpec spec, IReadOnlyDictionary<string, double>? pathCounts)
+    private static bool? EvaluateExpected(ItemCountSpec spec, IReadOnlyDictionary<string, double?>? pathCounts)
     {
         double? current = pathCounts != null && pathCounts.TryGetValue(spec.Item, out var pathCount) ? pathCount : ReadItemCount(spec.Item);
         if (current is null || !double.IsFinite(current.Value)) return null;

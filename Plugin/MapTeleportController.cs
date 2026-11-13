@@ -238,6 +238,7 @@ internal static class MapTeleportController
             }
         }
 
+        MapTeleportMode.ObservePointer(mouse.x, mouse.y);
         if (dragButton >= 0 && Input.GetMouseButton(dragButton))
         {
             var delta = mouse - dragStartPosition;

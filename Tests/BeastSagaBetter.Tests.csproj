@@ -10,5 +10,6 @@
     <ProjectReference Include="../Core/BeastSagaBetter.Core.csproj" />
     <Compile Include="../Plugin/Indicators.cs" Link="Plugin/Indicators.cs" />
     <Compile Include="../Plugin/FuturePreviewPresentation.cs" Link="Plugin/FuturePreviewPresentation.cs" />
+    <Compile Include="../Plugin/CheatCharacterSnapshot.cs" Link="Plugin/CheatCharacterSnapshot.cs" />
   </ItemGroup>
 </Project>

@@ -125,6 +125,165 @@ internal static class CheckpointHistoryTests
                 Require(records.Count == 6 && records.All(item => item.Generation != noted), records.Count.ToString());
             });
 
+            foreach (var scenario in new[] { (Notes: 1, Total: 6), (Notes: 6, Total: 11) })
+            {
+                Test($"{scenario.Notes} newest noted manual checkpoints preserve five ordinary checkpoints", () =>
+                {
+                    var quotaRoot = Path.Combine(root, "newest-notes-" + scenario.Notes);
+                    var quotaStore = new CheckpointStore(quotaRoot, "v1", maxManualCheckpoints: 5);
+                    var generations = Enumerable.Range(0, scenario.Total).Select(_ => quotaStore.Create(
+                        path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                        new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "备注额度", 10, 1, 1, null)))
+                        .OrderByDescending(value => value, StringComparer.Ordinal).ToArray();
+                    foreach (var generation in generations.Take(scenario.Notes)) quotaStore.SetNote(generation, "保留");
+
+                    quotaStore.Prune();
+
+                    var records = quotaStore.List();
+                    Require(records.Count == scenario.Total, $"expected {scenario.Total}, got {records.Count}");
+                    Require(records.Count(item => item.Note is null) == 5, "ordinary quota was consumed by notes");
+                    Require(generations.All(generation => records.Any(item => item.Generation == generation)),
+                        "a noted or ordinary checkpoint was removed");
+                });
+            }
+
+            Test("cheap archive listing isolates malformed unselected manifests", () =>
+            {
+                var corruptRoot = Path.Combine(root, "corrupt-list");
+                var corruptStore = new CheckpointStore(corruptRoot, "v1");
+                string Create() => corruptStore.Create(
+                    path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "损坏隔离", 10, 1, 1, null));
+                var healthy = Create();
+                corruptStore.Select(healthy);
+                foreach (var malformed in new[] { "{", "{\"Version\":\"invalid\"}" })
+                {
+                    var corrupt = Create();
+                    File.WriteAllText(Path.Combine(corruptRoot, corrupt, "manifest.json"), malformed);
+                }
+
+                var records = corruptStore.List(verifyPayloads: false);
+                Require(records.Count == 1 && records[0].Generation == healthy && records[0].Selected,
+                    "malformed unselected manifests hid the healthy selected checkpoint");
+                Require(corruptStore.Selected() == healthy);
+                Reject(() => corruptStore.List());
+            });
+
+            Test("pruning isolates malformed manifests without consuming the healthy legacy quota", () =>
+            {
+                var corruptRoot = Path.Combine(root, "corrupt-prune");
+                var corruptStore = new CheckpointStore(corruptRoot, "v1");
+                var healthy = Enumerable.Range(0, 5).Select(_ => corruptStore.Create(
+                    path => File.WriteAllText(Path.Combine(path, "save.es3"), "legacy"), _ => { }))
+                    .OrderByDescending(value => value, StringComparer.Ordinal).ToArray();
+                var corrupt = "99991231235959999-" + new string('a', 32);
+                var corruptFolder = Path.Combine(corruptRoot, corrupt);
+                Directory.CreateDirectory(corruptFolder);
+                File.WriteAllText(Path.Combine(corruptFolder, "manifest.json"), "{");
+                corruptStore.Select(healthy[0]);
+
+                corruptStore.Prune();
+
+                var records = corruptStore.List(verifyPayloads: false);
+                Require(records.Count == 5 && healthy.All(generation => records.Any(item => item.Generation == generation)),
+                    "malformed manifest displaced a healthy legacy checkpoint");
+                foreach (var generation in healthy) corruptStore.Validate(generation);
+                Require(Directory.Exists(corruptFolder), "corrupt checkpoint should remain isolated for inspection");
+                Require(corruptStore.Selected() == healthy[0]);
+            });
+
+            Test("malformed selected manifest fails closed without selecting a healthy fallback", () =>
+            {
+                var corruptRoot = Path.Combine(root, "corrupt-selected");
+                var corruptStore = new CheckpointStore(corruptRoot, "v1", maxManualCheckpoints: 5);
+                string Create() => corruptStore.Create(
+                    path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "选中损坏", 10, 1, 1, null));
+                var healthy = Enumerable.Range(0, 6).Select(_ => Create()).ToArray();
+                var corrupt = Create();
+                corruptStore.Select(corrupt);
+                var selection = File.ReadAllText(Path.Combine(corruptRoot, "selected.json"));
+                File.WriteAllText(Path.Combine(corruptRoot, corrupt, "manifest.json"), "{");
+
+                Reject(() => corruptStore.Selected());
+                Reject(() => corruptStore.Validate(corrupt));
+                Reject(() => corruptStore.Select(corrupt));
+                Reject(() => corruptStore.Prune());
+                Reject(() => corruptStore.List());
+                Require(File.ReadAllText(Path.Combine(corruptRoot, "selected.json")) == selection,
+                    "selected corruption changed the persisted selection");
+                foreach (var generation in healthy) corruptStore.Validate(generation);
+                var records = corruptStore.List(verifyPayloads: false);
+                Require(records.Count == 6 && records.All(item => !item.Selected),
+                    "cheap listing displayed a corrupt selection or chose a fallback");
+            });
+
+            Test("incompatible v1 metadata is isolated from cheap listing and manual retention", () =>
+            {
+                var incompatibleRoot = Path.Combine(root, "incompatible-v1");
+                var incompatibleStore = new CheckpointStore(incompatibleRoot, "v1", maxManualCheckpoints: 5);
+                var generations = Enumerable.Range(0, 6).Select(_ => incompatibleStore.Create(
+                    path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                    new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "格式隔离", 10, 1, 1, null)))
+                    .OrderByDescending(value => value, StringComparer.Ordinal).ToArray();
+                var incompatible = generations[0];
+                var healthy = generations.Skip(1).ToArray();
+                incompatibleStore.Select(healthy[0]);
+                var manifestPath = Path.Combine(incompatibleRoot, incompatible, "manifest.json");
+                var manifest = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(manifestPath))!;
+                manifest["Version"] = 1;
+                File.WriteAllText(manifestPath, manifest.ToJsonString());
+                Reject(() => incompatibleStore.Validate(incompatible));
+
+                var listedBefore = incompatibleStore.List(verifyPayloads: false).Any(item => item.Generation == incompatible);
+                incompatibleStore.Prune();
+                var records = incompatibleStore.List(verifyPayloads: false);
+                var listedAfter = records.Any(item => item.Generation == incompatible);
+                var healthyRetained = healthy.Count(generation => Directory.Exists(Path.Combine(incompatibleRoot, generation)));
+                Require(!listedBefore && !listedAfter && healthyRetained == 5,
+                    $"incompatible listed before/after: {listedBefore}/{listedAfter}; healthy retained: {healthyRetained}/5");
+                Require(records.Count == 5 && records.Single(item => item.Selected).Generation == healthy[0]);
+                foreach (var generation in healthy) incompatibleStore.Validate(generation);
+                Require(Directory.Exists(Path.Combine(incompatibleRoot, incompatible)), "incompatible checkpoint was deleted");
+                Require(incompatibleStore.Selected() == healthy[0]);
+            });
+
+            foreach (var invalidName in new[] { "../outside", @"..\outside", "C:outside", @"C:\outside", "/outside", "", ".", "..", "bad\0name", "bad?name", "bad|name" })
+            {
+                Test($"invalid payload name {JsonSerializer.Serialize(invalidName)} is isolated from cheap listing and manual retention", () =>
+                {
+                    var invalidRoot = Path.Combine(root, "invalid-payload-" + Guid.NewGuid().ToString("N"));
+                    var invalidStore = new CheckpointStore(invalidRoot, "v1", maxManualCheckpoints: 5);
+                    var generations = Enumerable.Range(0, 6).Select(_ => invalidStore.Create(
+                        path => File.WriteAllText(Path.Combine(path, "save.es3"), "full"), _ => { },
+                        new CheckpointMetadata(CheckpointKind.Manual, DateTime.Now, "文件名隔离", 10, 1, 1, null)))
+                        .OrderByDescending(value => value, StringComparer.Ordinal).ToArray();
+                    var invalid = generations[0];
+                    var healthy = generations.Skip(1).ToArray();
+                    invalidStore.Select(healthy[0]);
+                    var selection = File.ReadAllText(Path.Combine(invalidRoot, "selected.json"));
+                    var manifestPath = Path.Combine(invalidRoot, invalid, "manifest.json");
+                    var manifest = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(manifestPath))!;
+                    manifest["Files"]![invalidName] = "not-a-hash";
+                    File.WriteAllText(manifestPath, manifest.ToJsonString());
+                    Reject(() => invalidStore.Validate(invalid));
+
+                    var listedBefore = invalidStore.List(verifyPayloads: false).Any(item => item.Generation == invalid);
+                    invalidStore.Prune();
+                    var records = invalidStore.List(verifyPayloads: false);
+                    var listedAfter = records.Any(item => item.Generation == invalid);
+                    var healthyRetained = healthy.Count(generation => Directory.Exists(Path.Combine(invalidRoot, generation)));
+                    Require(!listedBefore && !listedAfter && healthyRetained == 5,
+                        $"invalid listed before/after: {listedBefore}/{listedAfter}; healthy retained: {healthyRetained}/5");
+                    Require(records.Count == 5 && records.Single(item => item.Selected).Generation == healthy[0]);
+                    foreach (var generation in healthy) invalidStore.Validate(generation);
+                    Require(Directory.Exists(Path.Combine(invalidRoot, invalid)), "invalid checkpoint was deleted");
+                    Require(invalidStore.Selected() == healthy[0]);
+                    Require(File.ReadAllText(Path.Combine(invalidRoot, "selected.json")) == selection,
+                        "isolating an invalid checkpoint changed the persisted selection");
+                });
+            }
+
             Test("pre-dialogue and manual checkpoints use separate quotas", () =>
             {
                 var protectedDialogue = Create(CheckpointKind.PreDialogue, "旧地图");

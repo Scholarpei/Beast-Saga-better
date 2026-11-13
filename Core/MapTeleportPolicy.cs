@@ -52,6 +52,7 @@ public static class MapTeleportMode
 
     private static bool active;
     private static bool pointerDown;
+    private static bool pointerDragged;
     private static float pointerDownX;
     private static float pointerDownY;
 
@@ -61,12 +62,14 @@ public static class MapTeleportMode
     {
         active = true;
         pointerDown = false;
+        pointerDragged = false;
     }
 
     public static void Close()
     {
         active = false;
         pointerDown = false;
+        pointerDragged = false;
     }
 
     public static void ForceClose() => Close();
@@ -75,17 +78,31 @@ public static class MapTeleportMode
 
     public static void BeginPointer(float x, float y)
     {
-        pointerDown = true;
+        pointerDown = active && float.IsFinite(x) && float.IsFinite(y);
+        pointerDragged = false;
         pointerDownX = x;
         pointerDownY = y;
+    }
+
+    public static void ObservePointer(float x, float y)
+    {
+        if (!active || !pointerDown || pointerDragged) return;
+        if (!float.IsFinite(x) || !float.IsFinite(y))
+        {
+            pointerDragged = true;
+            return;
+        }
+        var dx = (double)x - pointerDownX;
+        var dy = (double)y - pointerDownY;
+        pointerDragged = dx * dx + dy * dy > (double)DragThreshold * DragThreshold;
     }
 
     public static bool IsClickReleased(float x, float y)
     {
         if (!active || !pointerDown) return false;
+        ObservePointer(x, y);
         pointerDown = false;
-        var squaredDistance = (double)(x - pointerDownX) * (x - pointerDownX) + (double)(y - pointerDownY) * (y - pointerDownY);
-        return squaredDistance <= (double)DragThreshold * DragThreshold;
+        return !pointerDragged;
     }
 
     public static MapTeleportPoint EdgePan(float x, float y, float width, float height)
