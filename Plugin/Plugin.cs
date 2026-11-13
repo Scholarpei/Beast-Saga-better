@@ -884,9 +884,12 @@ public sealed partial class RuntimeDriver : MonoBehaviour
         var contentX = Math.Max(0, (body.View.Width - width) / 2);
         var labels = new[] { "运行模式", "对话前", "读取目标", "安全检查" };
         var values = new[] { state.Mode, state.DialogueCheckpointText, state.SelectedCheckpointText, state.BlockedText };
-        var probe = StatusPanelGeometry.Create(width, contentScale, new float[4]);
+        var actionLabels = new[] { "快速保存", "读取检查点", "地图传送" };
+        var actionWidths = actionLabels.Select(text =>
+            Math.Max(148 * contentScale, panelActionButtonStyle!.CalcSize(new GUIContent(text)).x + 56 * contentScale)).ToArray();
+        var probe = StatusPanelGeometry.Create(width, contentScale, new float[4], actionWidths);
         var heights = values.Select((text, index) => TextHeight(panelValueStyle!, text, probe.Values[index].Width, 28 * contentScale)).ToArray();
-        var geometry = StatusPanelGeometry.Create(width, contentScale, heights);
+        var geometry = StatusPanelGeometry.Create(width, contentScale, heights, actionWidths);
         statusScroll = GUI.BeginScrollView(UnityRect(body.View), statusScroll,
             new Rect(0, 0, body.View.Width, Math.Max(body.View.Height, geometry.Height)), false, true);
         GUI.BeginGroup(new Rect(contentX, 0, width, geometry.Height));
@@ -900,15 +903,19 @@ public sealed partial class RuntimeDriver : MonoBehaviour
                 GUI.Label(UnityRect(geometry.Values[index]), values[index], panelValueStyle!);
             }
             GUI.Label(new Rect(0, geometry.Card.Bottom + 12 * contentScale, width, 24 * contentScale), "快速操作", panelSectionStyle);
-            if (DrawActionButton(UnityRect(geometry.Save), "快速保存（F5）", state.CanSave, panelActionButtonStyle!, panelActionButtonHover!, panelActionButtonDisabled!))
+            if (DrawActionButton(UnityRect(geometry.Actions[0]), actionLabels[0], state.CanSave, panelActionButtonStyle!, panelActionButtonHover!, panelActionButtonDisabled!))
             {
                 CommandPanelState.RunSave(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
                 Plugin.RefreshPanelSelectedCheckpoint();
                 Plugin.RefreshPanelArchive();
             }
-            if (DrawActionButton(UnityRect(geometry.Load), "读取检查点（F6）", state.CanLoad, panelActionButtonStyle!, panelActionButtonHover!, panelActionButtonDisabled!))
+            if (DrawActionButton(UnityRect(geometry.Actions[1]), actionLabels[1], state.CanLoad, panelActionButtonStyle!, panelActionButtonHover!, panelActionButtonDisabled!))
                 CommandPanelState.RunLoad(state, new CommandPanelState.Actions(Plugin.SavePressed, Plugin.LoadPressed));
-            GUI.Label(new Rect(0, geometry.Load.Bottom + 18 * contentScale, width, 24 * contentScale), "辅助", panelSectionStyle);
+            if (DrawActionButton(UnityRect(geometry.Actions[2]), actionLabels[2],
+                !state.Faulted && !state.Busy && !state.Loading,
+                panelActionButtonStyle!, panelActionButtonHover!, panelActionButtonDisabled!))
+                MapTeleportController.Begin();
+            GUI.Label(new Rect(0, geometry.Actions[^1].Bottom + 18 * contentScale, width, 24 * contentScale), "辅助", panelSectionStyle);
             var toggle = UnityRect(geometry.Toggle);
             GUI.Box(toggle, GUIContent.none, panelCardStyle!);
             var next = GUI.Toggle(new Rect(toggle.x + 16 * contentScale, toggle.y + 8 * contentScale, Math.Max(1, toggle.width - 32 * contentScale), 28 * contentScale),

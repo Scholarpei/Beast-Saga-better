@@ -36,9 +36,10 @@ public readonly record struct PanelBodyLayout(PanelRect View, PanelRect Footer)
 }
 
 public sealed record StatusPanelGeometry(PanelRect Card, IReadOnlyList<PanelRect> Labels,
-    IReadOnlyList<PanelRect> Values, PanelRect Save, PanelRect Load, PanelRect Toggle, float Height)
+    IReadOnlyList<PanelRect> Values, IReadOnlyList<PanelRect> Actions, PanelRect Toggle, float Height)
 {
-    public static StatusPanelGeometry Create(float width, float scale, IReadOnlyList<float> measuredValues)
+    public static StatusPanelGeometry Create(float width, float scale, IReadOnlyList<float> measuredValues,
+        IReadOnlyList<float>? measuredActions = null)
     {
         var pad = 16 * scale;
         var labelWidth = Math.Min(112 * scale, width * .3f);
@@ -54,10 +55,29 @@ public sealed record StatusPanelGeometry(PanelRect Card, IReadOnlyList<PanelRect
             y += height + 10 * scale;
         }
         var card = new PanelRect(0, 0, width, y + 6 * scale);
-        var save = new PanelRect(0, card.Bottom + 48 * scale, width, 46 * scale);
-        var load = save with { Y = save.Bottom + 12 * scale };
-        var toggle = new PanelRect(0, load.Bottom + 60 * scale, width, 48 * scale);
-        return new(card, labels, values, save, load, toggle, toggle.Bottom + 16 * scale);
+        var actionGap = 10 * scale;
+        var actionHeight = 42 * scale;
+        var actionWidths = measuredActions is { Count: > 0 } ? measuredActions : new[] { 1f, 1f, 1f };
+        var actions = new List<PanelRect>();
+        var actionX = 0f;
+        var actionY = card.Bottom + 44 * scale;
+        for (var index = 0; index < actionWidths.Count; index++)
+        {
+            var measured = actionWidths[index];
+            var actionWidth = float.IsFinite(measured) && measured > 0
+                ? measured
+                : (width - actionGap * (actionWidths.Count - 1)) / actionWidths.Count;
+            actionWidth = Math.Min(actionWidth, width);
+            if (actionX > 0 && actionX + actionWidth > width + .01f)
+            {
+                actionX = 0;
+                actionY += actionHeight + actionGap;
+            }
+            actions.Add(new(actionX, actionY, Math.Max(1, actionWidth), actionHeight));
+            actionX += actionWidth + actionGap;
+        }
+        var toggle = new PanelRect(0, actionY + actionHeight + 60 * scale, width, 48 * scale);
+        return new(card, labels, values, actions, toggle, toggle.Bottom + 16 * scale);
     }
 }
 

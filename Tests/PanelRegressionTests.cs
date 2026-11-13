@@ -51,10 +51,13 @@ internal static class PanelRegressionTests
                 Require(body.View.Bottom < body.Footer.Y, "body overlaps footer");
                 Require(body.Footer.Height <= 18 * contentScale + .01f, "footer hint row is too tall");
                 Require(width - body.View.Right >= 19 * scale, "body no longer respects the screen edge");
+                var actionWidths = new[] { 180f, 190f, 150f }.Select(value => value * contentScale).ToArray();
                 var shortText = StatusPanelGeometry.Create(body.View.Width - 20 * contentScale, contentScale,
-                    new[] { 30 * contentScale, 30 * contentScale, 30 * contentScale, 30 * contentScale });
+                    new[] { 30 * contentScale, 30 * contentScale, 30 * contentScale, 30 * contentScale },
+                    actionWidths);
                 var longText = StatusPanelGeometry.Create(body.View.Width - 20 * contentScale, contentScale,
-                    new[] { 30 * contentScale, 60 * contentScale, 480 * contentScale, 180 * contentScale });
+                    new[] { 30 * contentScale, 60 * contentScale, 600 * contentScale, 240 * contentScale },
+                    actionWidths);
                 for (var index = 0; index < longText.Values.Count; index++)
                 {
                     Inside(longText.Labels[index], longText.Card);
@@ -63,8 +66,23 @@ internal static class PanelRegressionTests
                     Require(longText.Labels[index].Right < longText.Values[index].X, "label overlaps value");
                     if (index > 0) Require(longText.Values[index - 1].Bottom < longText.Values[index].Y, "measured rows overlap");
                 }
-                Require(longText.Save.Y - shortText.Save.Y >= 239 * contentScale, "long text did not push buttons down");
-                Require(longText.Card.Bottom < longText.Save.Y && longText.Save.Bottom < longText.Load.Y && longText.Load.Bottom < longText.Toggle.Y);
+                Require(longText.Actions.Count == 3, "quick actions lost their buttons");
+                for (var index = 0; index < longText.Actions.Count; index++)
+                {
+                    Inside(longText.Actions[index], new(0, 0, body.View.Width - 20 * contentScale, longText.Height));
+                    if (index > 0)
+                    {
+                        var previous = longText.Actions[index - 1];
+                        var current = longText.Actions[index];
+                        Require(previous.Bottom <= current.Y + .01f || previous.Right <= current.X + .01f,
+                            "quick action buttons overlap");
+                    }
+                }
+                Require(longText.Actions.Select(action => action.Y).Distinct().Count() == 1,
+                    "desktop quick actions should share one compact row");
+                Require(longText.Actions[0].Y - shortText.Actions[0].Y >= 239 * contentScale, "long text did not push buttons down");
+                Require(longText.Card.Bottom < longText.Actions[0].Y &&
+                    longText.Actions[^1].Bottom < longText.Toggle.Y);
                 Require(longText.Height > body.View.Height, "long text must scroll within body, above footer");
             });
             Test($"archive measured row rectangles fit and do not overlap at {width}x{height}", () =>
@@ -125,8 +143,16 @@ internal static class PanelRegressionTests
                 var detail = PanelVerticalStack.Create(columns.Detail.Width - 20 * contentScale, contentScale,
                     new[] { 200 * contentScale, 90 * contentScale, 140 * contentScale, 300 * contentScale, 36 * contentScale });
                 Require(detail.Height > columns.Detail.Height);
+                var actionWidths = new[] { 220f, 220f, 220f }.Select(value => value * contentScale).ToArray();
                 var status = StatusPanelGeometry.Create(body.View.Width - 20 * contentScale, contentScale,
-                    new[] { 30 * contentScale, 90 * contentScale, 180 * contentScale, 140 * contentScale });
+                    new[] { 30 * contentScale, 90 * contentScale, 180 * contentScale, 140 * contentScale },
+                    actionWidths);
+                foreach (var action in status.Actions)
+                    Inside(action, new(0, 0, body.View.Width - 20 * contentScale, status.Height));
+                for (var index = 1; index < status.Actions.Count; index++)
+                    Require(status.Actions[index - 1].Y < status.Actions[index].Y ||
+                        status.Actions[index - 1].Right <= status.Actions[index].X + .01f,
+                        "wrapped quick actions overlap");
                 Require(status.Height > body.View.Height);
             });
         Test("scrollbar clamps short-track thumb and out-of-range scroll within track", () =>
