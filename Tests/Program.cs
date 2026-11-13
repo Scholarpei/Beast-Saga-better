@@ -76,7 +76,7 @@ try
     });
     Test("a return option is marked backtrack without opening sibling branches", () =>
     {
-        IndicatorHarness.ResetIndicatorState();        var reconsider = new DialogueEntry { id = 924 };
+        IndicatorHarness.ResetIndicatorState();        var reconsider = new DialogueEntry { id = 924, ActorID = 1 };
         var choose = new DialogueEntry { id = 899 };
         reconsider.outgoingLinks.Add(new Link(choose));
         choose.outgoingLinks.Add(new Link(reconsider));
@@ -555,7 +555,7 @@ try
     Test("equivalent crafting options retain their reward beside one backtrack", () =>
     {
         IndicatorHarness.ResetIndicatorState();        var selector = new DialogueEntry { id = 899 };
-        var reconsider = new DialogueEntry { id = 924 };
+        var reconsider = new DialogueEntry { id = 924, ActorID = 1 };
         reconsider.outgoingLinks.Add(new Link(selector));
         var choices = new[]
         {
@@ -567,7 +567,7 @@ try
         };
         foreach (var choice in choices)
         {
-            var option = new DialogueEntry { id = choice.id };
+            var option = new DialogueEntry { id = choice.id, ActorID = 1 };
             var confirm = new DialogueEntry { id = choice.confirm };
             var reward = new DialogueEntry
             {
@@ -957,6 +957,9 @@ try
         Require(pruneStore.Selected() == generation);
         Require(Directory.GetDirectories(pruneRoot).Length <= 6);
     });
+    var previews = PreviewRegressionTests.Run();
+    checks += previews.Checks;
+    failures += previews.Failures;
     var history = CheckpointHistoryTests.Run();
     checks += history.Checks;
     failures += history.Failures;

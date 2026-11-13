@@ -27,9 +27,9 @@ Test-Path -LiteralPath ./tools/sdk/dotnet.exe
 ./tools/sdk/dotnet.exe run --project Tests/BeastSagaBetter.Tests.csproj -c Release
 ```
 
-入口为 [`Tests/Program.cs`](../../Tests/Program.cs)，汇总检查点、预测、修改、物品、地图传送和面板回归。末尾应为 `RESULT <通过数>/<总数> passed` 且退出码为 0；以本次输出为准。
+入口为 [`Tests/Program.cs`](../../Tests/Program.cs)，汇总检查点、预测、修改、物品、地图传送、面板和战斗回归。末尾应为 `RESULT <通过数>/<总数> passed` 且退出码为 0；以本次输出为准。
 
-`Tests/IndicatorHarness.cs` 提供游戏类型桩。测试项目直接链接 `Plugin/Indicators.cs` 和 `Plugin/FuturePreviewPresentation.cs`，其余多数插件接入逻辑不在这个测试程序中执行。
+`Tests/IndicatorHarness.cs` 提供游戏类型桩。测试项目直接链接 `Plugin/Indicators.cs`、`Plugin/FuturePreviewPresentation.cs` 和 `Plugin/CheatCharacterSnapshot.cs`。角色快照测试执行实际快照及好感读取流程，原生属性读取由 `Tests/CheatSnapshotHarness.cs` 提供受控替身；其余多数插件接入逻辑不在这个测试程序中执行。
 
 ### 插件构建
 
@@ -125,13 +125,13 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools/backup-saves.ps1
 pwsh -NoProfile -ExecutionPolicy Bypass -File tools/deploy-production.ps1
 ```
 
-两个脚本会向本地 `verification/` 写记录，使用前确认该目录存在。部署脚本备份的是插件文件，不等于存档全量备份。
+两个脚本会向本地 `verification/` 写记录。部署脚本在发布前自动创建目录并检查可写性；备份脚本使用前仍需确认该目录存在。部署脚本备份的是插件文件，不等于存档全量备份。
 
 - 正式游戏不在仓库父目录时，部署传 `-GameDir 'D:/Games/Beast Saga'`。注意脚本的 `-GameDir` 用于部署目标，**没有传给内部 `dotnet build`**；此布局应先用相同 `GameDir` 手动构建，再按任务使用 `-SkipBuild`。
-- `-PluginDir` 自定义目标并跳过默认的新旧目录迁移；它不会自动证明不存在其他活动插件副本。
+- `-PluginDir` 自定义目标并跳过默认的新旧目录迁移，但不绕过默认新旧活动目录共存检查，也不会自动证明不存在其他活动插件副本。
 - `-SkipTests` / `-SkipBuild` 只用于已有相应验证证据的任务；`-SkipBuild` 仍检查 `Plugin/`、`Core/` 的 `.cs`、`.csproj` 时间是否晚于 DLL。
-- 默认迁移拒绝新旧活动插件共存；唯一旧插件目录先完整备份，再迁至 `.disabled/`，DLL 被加禁用后缀。只有目录中仅剩 `.disabled/` 且没有活动 `.dll` 时才视为已禁用。
-- 复制使用目标同目录临时文件、SHA-256 校验及替换，部分失败路径有旧目标恢复处理；不要承诺任意阶段失败都能整体事务回滚。异常时先查备份和部署记录。
+- 默认迁移拒绝新旧活动插件共存；唯一旧插件目录先完整备份，包括隐藏项和空目录，再迁至 `.disabled/`，DLL 被加禁用后缀。备份拒绝重解析点。只有目录中仅剩 `.disabled/` 且没有活动 `.dll` 时才视为已禁用。
+- 复制使用目标同目录临时文件和 SHA-256 校验。发布、迁移或记录异常共用恢复流程：保留备份，恢复原目标与 dist，移除本次新增 DLL，并从完整快照恢复旧插件目录；回滚失败时报告原因与备份路径。该机制覆盖受控异常，不是断电日志，不能保证强制结束、持续文件锁或外部并发改动下的自动恢复。
 - 成功记录位于 `verification/production-deployment-<时间戳>.json`，插件备份位于 `backups/<时间戳>-deploy/`。`dist/` 包含插件 DLL，不包含 BepInEx、游戏文件、存档或授权标记。
 
 ## 交付前检查

@@ -21,9 +21,28 @@ function New-TestFile([string] $path, [string] $content) {
     if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
     Set-Content -LiteralPath $path -Value $content -NoNewline
 }
-function Invoke-BackupScript([string] $gameRoot) {
+function Remove-TestDirectory([string] $path) {
+    $absolutePath = [IO.Path]::GetFullPath($path)
+    $absoluteRoot = [IO.Path]::GetFullPath($temporaryRoot)
+    $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+    Require ([IO.Path]::GetFileName($absoluteRoot) -like 'BeastSagaBetter-backup-tests-*') 'Unexpected test root'
+    Require ($absoluteRoot.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) 'Test root escaped TEMP'
+    Require ($absolutePath -eq $absoluteRoot -or $absolutePath.StartsWith($absoluteRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) 'Cleanup escaped test root'
+    Remove-Item -LiteralPath $absolutePath -Recurse -Force
+}
+function Get-TestTreeState([string] $root) {
+    Get-ChildItem -LiteralPath $root -Recurse -Force | Sort-Object FullName | ForEach-Object {
+        $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
+        if ($_.PSIsContainer) { "directory|$relative" }
+        else { "file|$relative|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }
+    }
+}
+function Invoke-BackupScript([string] $gameRoot, [switch] $GameRunning) {
     $scriptCopy = Join-Path $gameRoot 'project/tools/backup-saves.ps1'
-    $output = & pwsh.exe -NoProfile -ExecutionPolicy Bypass -File $scriptCopy
+    $driver = Join-Path $gameRoot 'project/tools/backup-test-driver.ps1'
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $driver, '-ScriptPath', $scriptCopy)
+    if ($GameRunning) { $arguments += '-GameRunning' }
+    $output = @(& (Join-Path $PSHOME 'pwsh.exe') @arguments 2>&1 | ForEach-Object { $_.ToString() })
     return @{
         Output = $output
         ExitCode = $LASTEXITCODE
@@ -35,6 +54,27 @@ $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("BeastSagaBetter-backup-t
 $gameRoot = $temporaryRoot
 New-Item -ItemType Directory -Path (Join-Path $gameRoot 'project/tools'), (Join-Path $gameRoot 'project/verification') | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'backup-saves.ps1') -Destination (Join-Path $gameRoot 'project/tools/backup-saves.ps1')
+# Fixed driver source and parameter binding keep paths out of generated shell commands.
+# The override lives only in this fixture's child process; it never queries the host.
+Set-Content -LiteralPath (Join-Path $gameRoot 'project/tools/backup-test-driver.ps1') -Value @'
+param([Parameter(Mandatory = $true)][string] $ScriptPath, [switch] $GameRunning)
+$ErrorActionPreference = 'Stop'
+$simulatedGameRunning = $GameRunning.IsPresent
+$processQuery = {
+    [CmdletBinding()]
+    param([string] $Name)
+    if ($Name -ne 'BeastSaga') { throw "Unexpected process query in backup fixture: $Name" }
+    if ($simulatedGameRunning) { [pscustomobject]@{ ProcessName = 'BeastSaga'; Id = -1 } }
+}.GetNewClosure()
+Set-Item -LiteralPath Function:Get-Process -Value $processQuery
+try {
+    & $ScriptPath
+    exit 0
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}
+'@
 
 $expectedFiles = @(
     @{ Root = 'SaveData'; Path = 'save.dat'; Content = 'save-data' }
@@ -56,6 +96,17 @@ foreach ($expected in $expectedFiles) {
 }
 
 try {
+    Then 'a running game is refused before any backup or verification write' {
+        $before = @(Get-TestTreeState $gameRoot) -join "`n"
+        $refused = Invoke-BackupScript $gameRoot -GameRunning
+        Require ($refused.ExitCode -ne 0) 'A running game was accepted'
+        Require (($refused.Output -join "`n") -like '*Game is running; refusing to back up inconsistent saves*') ($refused.Output -join "`n")
+        Require ([string]::IsNullOrWhiteSpace($refused.Backup)) 'Refused backup reported a BACKUP artifact'
+        Require (-not (Test-Path -LiteralPath (Join-Path $gameRoot 'project/backups'))) 'Refused backup created backup artifacts'
+        Require (@(Get-ChildItem -LiteralPath (Join-Path $gameRoot 'project/verification') -Force).Count -eq 0) 'Refused backup wrote verification artifacts'
+        Require (@(Get-ChildItem -LiteralPath $gameRoot -Recurse -Force -File -Filter 'VERIFIED').Count -eq 0) 'Refused backup created VERIFIED'
+        Require ((@(Get-TestTreeState $gameRoot) -join "`n") -eq $before) 'Refused backup changed the fixture tree'
+    }
     $result = Invoke-BackupScript $temporaryRoot
     Then 'backup completes' {
         $diagnostics = (($result.Output | Select-Object -First 8) -join [Environment]::NewLine)
@@ -65,7 +116,7 @@ try {
     }
 
     $manifest = @()
-    if (Test-Path -LiteralPath (Join-Path $result.Backup 'manifest.json')) {
+    if (-not [string]::IsNullOrWhiteSpace($result.Backup) -and (Test-Path -LiteralPath (Join-Path $result.Backup 'manifest.json'))) {
         $manifest = @((Get-Content -LiteralPath (Join-Path $result.Backup 'manifest.json') -Raw | ConvertFrom-Json))
     }
     Then 'one manifest strictly covers every required root' {
@@ -94,10 +145,10 @@ try {
         Require ((Get-Content -LiteralPath $marker -Raw) -like "*$($expectedFiles.Count) files*") (Get-Content -LiteralPath $marker -Raw)
     }
 
-    Remove-Item -LiteralPath (Join-Path $gameRoot 'SafeDialogueToolsData') -Recurse -Force
+    Remove-TestDirectory (Join-Path $gameRoot 'SafeDialogueToolsData')
     $missingRootResult = Invoke-BackupScript $temporaryRoot
     $missingRootManifest = @()
-    if (Test-Path -LiteralPath (Join-Path $missingRootResult.Backup 'manifest.json')) {
+    if (-not [string]::IsNullOrWhiteSpace($missingRootResult.Backup) -and (Test-Path -LiteralPath (Join-Path $missingRootResult.Backup 'manifest.json'))) {
         $missingRootManifest = @((Get-Content -LiteralPath (Join-Path $missingRootResult.Backup 'manifest.json') -Raw | ConvertFrom-Json))
     }
     Then 'a missing historical data root is skipped' {
@@ -107,7 +158,7 @@ try {
         Require (-not (Test-Path -LiteralPath (Join-Path $missingRootResult.Backup 'SafeDialogueToolsData'))) 'missing root was created in backup'
     }
 } finally {
-    Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+    Remove-TestDirectory $temporaryRoot
 }
 
 $passed = $script:checks - $script:failures

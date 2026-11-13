@@ -40,6 +40,38 @@ internal static class MapTeleportTests
             MapTeleportMode.Reset();
         });
 
+        Test("dragging out and back cannot become a teleport click", () =>
+        {
+            MapTeleportMode.Reset();
+            MapTeleportMode.Open();
+            MapTeleportMode.BeginPointer(100, 100);
+            MapTeleportMode.ObservePointer(200, 100);
+            MapTeleportMode.ObservePointer(100, 100);
+            Require(!MapTeleportMode.IsClickReleased(100, 100), "returning to the start must not undo a drag");
+            MapTeleportMode.BeginPointer(100, 100);
+            MapTeleportMode.ObservePointer(103, 102);
+            Require(MapTeleportMode.IsClickReleased(104, 102), "a later short click must reset drag history");
+            MapTeleportMode.Reset();
+        });
+
+        Test("pointer history rejects invalid positions and resets when mode closes", () =>
+        {
+            MapTeleportMode.Reset();
+            MapTeleportMode.Open();
+            MapTeleportMode.BeginPointer(100, 100);
+            MapTeleportMode.ObservePointer(float.NaN, 100);
+            Require(!MapTeleportMode.IsClickReleased(100, 100), "invalid motion must not authorize a click");
+            MapTeleportMode.BeginPointer(100, 100);
+            MapTeleportMode.ObservePointer(109, 100);
+            MapTeleportMode.Close();
+            MapTeleportMode.Open();
+            Require(!MapTeleportMode.IsClickReleased(100, 100), "closing must clear an unfinished press");
+            MapTeleportMode.BeginPointer(100, 100);
+            MapTeleportMode.ObservePointer(108, 100);
+            Require(MapTeleportMode.IsClickReleased(108, 100), "the documented threshold remains inclusive");
+            MapTeleportMode.Reset();
+        });
+
         Test("map teleport candidates use exact point before fixed nudge fallback", () =>
         {
             bool Exact(float x, float y) => x == 10f && y == 20f;

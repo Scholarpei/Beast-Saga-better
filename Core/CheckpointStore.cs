@@ -122,15 +122,9 @@ public sealed class CheckpointStore
         Manifest manifest;
         try { manifest = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath)) ?? throw new InvalidDataException("Empty manifest"); }
         catch (JsonException error) { throw new InvalidDataException("Invalid manifest", error); }
-        if ((manifest.Version != 1 && manifest.Version != 2) || manifest.Fingerprint != fingerprint || manifest.Files is null || !manifest.Files.ContainsKey("save.es3"))
-            throw new InvalidDataException("Incompatible checkpoint");
-        if (manifest.Version == 2 && manifest.Metadata is null) throw new InvalidDataException("Missing checkpoint metadata");
-        if (manifest.Version == 1 && manifest.Metadata is not null) throw new InvalidDataException("Invalid checkpoint metadata");
-        if (manifest.Version == 2 && !IsValidMetadata(manifest.Metadata!)) throw new InvalidDataException("Invalid checkpoint metadata");
+        ValidateManifestStructure(manifest);
         foreach (var entry in manifest.Files)
         {
-            if (string.IsNullOrEmpty(entry.Key) || entry.Key != Path.GetFileName(entry.Key) || entry.Key.IndexOfAny(new[] { '/', '\\', ':' }) >= 0)
-                throw new InvalidDataException("Invalid payload name");
             var path = Path.Combine(folder, entry.Key);
             CheckFile(path);
             if (Hash(path) != entry.Value) throw new InvalidDataException("Checkpoint checksum mismatch: " + entry.Key);
@@ -153,7 +147,7 @@ public sealed class CheckpointStore
                 .OrderByDescending(name => name, StringComparer.Ordinal).ToArray();
             var notes = ReadNotes();
             var kinds = candidates.ToDictionary(name => name!, name => ReadKind(name!));
-            foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Manual).Take(maxManualCheckpoints)) keep.Add(generation);
+            foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Manual && string.IsNullOrWhiteSpace(notes.GetValueOrDefault(name!))).Take(maxManualCheckpoints)) keep.Add(generation);
             foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.PreDialogue).Take(maxPreDialogueCheckpoints)) keep.Add(generation);
             foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Legacy).Take(5)) keep.Add(generation);
             foreach (var generation in candidates.Where(name => kinds[name!] == CheckpointKind.Manual && !string.IsNullOrWhiteSpace(notes.GetValueOrDefault(name!)))) keep.Add(generation);
@@ -295,16 +289,18 @@ public sealed class CheckpointStore
     {
         var manifestPath = Path.Combine(root, generation, "manifest.json");
         CheckFile(manifestPath);
-        var metadata = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath));
+        Manifest? metadata;
+        try { metadata = JsonSerializer.Deserialize<Manifest>(File.ReadAllText(manifestPath)); }
+        catch (JsonException error) { throw new InvalidDataException("Invalid manifest", error); }
         if (metadata?.Metadata is not null && metadata.Metadata.Day == 0)
             metadata = metadata with { Metadata = metadata.Metadata with { Day = 1 } };
         return metadata ?? throw new InvalidDataException("Empty manifest");
     }
 
-    private CheckpointKind ReadKind(string generation)
+    private CheckpointKind? ReadKind(string generation)
     {
         var manifest = ReadKindManifest(generation, out var valid);
-        return valid ? manifest!.Metadata?.Kind ?? CheckpointKind.Legacy : CheckpointKind.Legacy;
+        return valid ? manifest!.Metadata?.Kind ?? CheckpointKind.Legacy : null;
     }
 
     private Manifest ReadValidatedManifest(string generation)
@@ -319,9 +315,8 @@ public sealed class CheckpointStore
         try
         {
             var manifest = ReadManifest(generation);
-            valid = (manifest.Version == 1 || manifest.Version == 2) && manifest.Fingerprint == fingerprint &&
-                    manifest.Files is not null && manifest.Files.ContainsKey("save.es3") &&
-                    (manifest.Version == 1 || manifest.Metadata is not null && IsValidMetadata(manifest.Metadata));
+            ValidateManifestStructure(manifest);
+            valid = true;
             return manifest;
         }
         catch (InvalidDataException)
@@ -329,6 +324,19 @@ public sealed class CheckpointStore
             valid = false;
             return null;
         }
+    }
+
+    private void ValidateManifestStructure(Manifest manifest)
+    {
+        if ((manifest.Version != 1 && manifest.Version != 2) || manifest.Fingerprint != fingerprint || manifest.Files is null || !manifest.Files.ContainsKey("save.es3"))
+            throw new InvalidDataException("Incompatible checkpoint");
+        if (manifest.Version == 2 && manifest.Metadata is null) throw new InvalidDataException("Missing checkpoint metadata");
+        if (manifest.Version == 1 && manifest.Metadata is not null) throw new InvalidDataException("Invalid checkpoint metadata");
+        if (manifest.Version == 2 && !IsValidMetadata(manifest.Metadata!)) throw new InvalidDataException("Invalid checkpoint metadata");
+        foreach (var name in manifest.Files.Keys)
+            if (string.IsNullOrEmpty(name) || name is "." or ".." || name != Path.GetFileName(name) ||
+                name.IndexOfAny(new[] { '/', '\\', ':' }) >= 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw new InvalidDataException("Invalid payload name");
     }
 
     private static void CheckDirectory(string path)

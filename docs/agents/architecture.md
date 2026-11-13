@@ -27,7 +27,7 @@ Core/（net6.0，独立项目）<—— ProjectReference —— Tests/（net8.0�
 | 选项判定、奖励消耗、任务和分支预测；未知条件与危险脚本处停止 | `Core/CheckPreview.cs`、`Core/FutureScriptPreview.cs` | `Plugin/Indicators.cs`、`Plugin/FuturePreviewPresentation.cs` | `Tests/Program.cs`、`Tests/IndicatorHarness.cs` |
 | F5 手动检查点、对话前捕获、F6 读取、备注与保留策略 | `Core/CheckpointStore.cs`、`Core/LoadWorkStore.cs`、`Core/DataRootLock.cs`、`Core/LoadRequestPolicy.cs`、`Core/SafetyPolicy.cs` | `Plugin/Plugin.cs`、`Plugin/NativeSave.cs` | `Tests/Program.cs`、`Tests/CheckpointHistoryTests.cs` |
 | Tab 面板：状态、存档库、修改作弊；快速保存、读取、地图传送 | `Core/CommandPanelState.cs`、`Core/PanelGeometry.cs`、`Core/PanelKeySuppression.cs` | `RuntimeDriver`、`Plugin/PanelKeyboardGate.cs`、`Plugin/PanelInputGate.cs` | `Tests/PanelRegressionTests.cs`、`tools/PanelPreview/` |
-| 角色属性、武学与生活技能等级、好感、属性与特性点数 | `Core/CheatCharacters.cs`、`Core/CheatInput.cs`、`Core/CheatPanel.cs`、`Core/CheatBatch.cs`、`Core/CheatSession.cs` | `Plugin/CheatEditor.cs`、`Plugin/CheatPanel.cs` | `Tests/CheatFeatureTests.cs` |
+| 角色属性、武学与生活技能等级、好感、属性与特性点数 | `Core/CheatCharacters.cs`、`Core/CheatInput.cs`、`Core/CheatPanel.cs`、`Core/CheatBatch.cs`、`Core/CheatSession.cs` | `Plugin/CheatEditor.cs`、`Plugin/CheatCharacterSnapshot.cs`、`Plugin/CheatPanel.cs` | `Tests/CheatFeatureTests.cs`、`Tests/CheatSnapshotTests.cs` |
 | 物品搜索、分类、背包筛选、原生图标、添加、移除具体装备实例 | `Core/CheatItems.cs`、`Core/ItemEditSession.cs`、`Core/ItemDisplayPolicyCache.cs`、`Core/ItemIconBudget.cs` | `Plugin/ItemEditor.cs`、`Plugin/ItemPanel.cs`、`Plugin/ItemIcons.cs` | `Tests/ItemFeatureTests.cs` |
 | 当前地图选点、拖动和边缘移动相机、落点检查、退出恢复相机 | `Core/MapTeleportPolicy.cs`、`Core/MapTeleportCollision.cs` | `Plugin/MapTeleportController.cs`、输入 Gate | `Tests/MapTeleportTests.cs` |
 | 钓鱼立即成功、当前场景移动速度调整 | `Core/CheatPolicy.cs`、`Core/CheatPanel.cs` | `Plugin/Plugin.cs` 的钓鱼 Patch、`Plugin/CheatEditor.cs`、`Plugin/CheatPanel.cs` | `Tests/CheatFeatureTests.cs` |
@@ -35,6 +35,8 @@ Core/（net6.0，独立项目）<—— ProjectReference —— Tests/（net8.0�
 | 沙箱测试命令、状态快照、原生读取诊断 | `Core/LoadRequestPolicy.cs` | `Plugin/TestBridge.cs`、`Plugin/SandboxPrefs.cs` | `tools/start-test.ps1`、`tools/send-test.ps1` |
 
 路径均相对仓库根目录。先读取相关行或方法，再扩大搜索范围；无需先通读体积较大的 `Plugin.cs`、`Indicators.cs` 或 `Tests/Program.cs`。
+
+`CheatEditor` 的快照模型、快照组装和好感查找位于 `CheatCharacterSnapshot.cs` partial 中，测试直接链接这份实现。已认识角色的好感记录不依赖已招募队友对象；原生六维、武学和生活值读取仍留在 `CheatEditor.cs`。
 
 ## 配置与默认值
 
@@ -69,7 +71,7 @@ Core/（net6.0，独立项目）<—— ProjectReference —— Tests/（net8.0�
 2. **角色范围有限制。** 已认识但未入队的角色只开放好感；生活点按技能等级推导且只读；不能把未经确认的最终悟性或脚程显示成已知值。
 3. **各修改功能的检查点要求不同。** 物品增删强制要求 `CheckpointsActive`；角色/点数的 `EnsurePreEditCheckpoint()` 在未获建档 reservation 时会返回允许。不要描述为“所有修改都强制成功建档”，详见[写入保护](safety.md#游戏状态写入)。
 4. **配置帮助文本滞后。** `EnableCheckpoints` 的说明仍写“仅允许隔离副本”，实际 `SafetyPolicy.CanOperate()` 已支持“配置开启 + 正式授权标记”。以策略及调用为准。
-5. **传送实现需按代码描述。** README 使用“官方传送流程”措辞；当前 `MapTeleportController.Teleport()` 实际设置玩家位置，再调用 `map.UpdateMap()` 和 `map.LoadCheck()`，同时恢复相机相关状态。不能推断已覆盖跨地图加载或所有剧情触发器。
+5. **传送仅覆盖当前地图。** `MapTeleportController.Teleport()` 设置玩家位置，再调用 `map.UpdateMap()` 和 `map.LoadCheck()`，同时恢复相机相关状态；README 已按直接移动玩家并更新当前地图加载描述。不能推断已覆盖跨地图加载或所有剧情触发器。
 6. **网页只是布局预览。** `PanelPreview` 的状态字段部分为演示值，选择保存在服务内存，备注编辑不写回检查点；网页效果不能替代游戏 IMGUI 验证。
 7. **测试数量会变化。** `Tests/Program.cs` 汇总所有控制台测试，README 徽标中的数量属于维护时的快照；报告本次实际 `RESULT`。
 

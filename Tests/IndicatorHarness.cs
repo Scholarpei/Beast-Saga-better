@@ -104,6 +104,7 @@ namespace HarmonyLib
 
 namespace PixelCrushers.DialogueSystem
 {
+    internal enum ConditionPriority { Low = 0, BelowNormal = 1, Normal = 2, AboveNormal = 3, High = 4 }
     internal sealed class Link
     {
         internal Link(DialogueEntry entry, int id = -1)
@@ -112,11 +113,12 @@ namespace PixelCrushers.DialogueSystem
             Entry = entry;
         }
         internal DialogueEntry Entry = null!;
+        internal ConditionPriority priority = ConditionPriority.Normal;
     }
     internal sealed class DialogueEntry
     {
         internal string conditionsString = "", userScript = "", Sequence = "";
-        internal int conversationID = 2, id = 90000;
+        internal int conversationID = 2, id = 90000, ActorID;
         internal List<Link> outgoingLinks = new();
     }
     internal sealed class FormattedText { internal string text = ""; }
@@ -142,7 +144,12 @@ namespace PixelCrushers.DialogueSystem
     internal sealed class Subtitle { internal DialogueEntry dialogueEntry = new(); }
     internal sealed class ConversationView { internal void StartSubtitle(Subtitle subtitle) { } }
     internal sealed class ConversationController { internal void Close() { } }
-    internal sealed class Database { internal DialogueEntry GetDialogueEntry(Link link) => link.Entry; }
+    internal sealed class Actor { internal bool IsPlayer; }
+    internal sealed class Database
+    {
+        internal DialogueEntry GetDialogueEntry(Link link) => link.Entry;
+        internal Actor GetActor(int id) => new() { IsPlayer = id == 1 };
+    }
     internal static class DialogueManager { internal static Database masterDatabase = new(); }
     internal static class DialogueLua
     {
@@ -189,10 +196,16 @@ namespace BeastSagaBetter
 
 internal enum PlayerProType { }
 internal enum LifeType { }
+internal sealed class PlayerData
+{
+    internal int Lv = 1;
+    internal float Exp = 0;
+    internal Dictionary<string, float> FriendLoveNum = new();
+}
 internal sealed class PlayerDataManager
 {
     internal static PlayerDataManager _Instance = new();
-    internal object _PlayerData = new();
+    internal PlayerData _PlayerData = new();
     internal bool _IsLoadOver = true;
     internal readonly Dictionary<string, int> ItemCounts = new();
     internal readonly Dictionary<string, int> DressedItemCounts = new();
@@ -216,7 +229,13 @@ internal sealed class PlayerDialogue
     internal readonly Dictionary<string, int> StoredItemCounts = new();
     internal int ChuCangIsHaveItemNum(string name) => StoredItemCounts.TryGetValue(name, out var count) ? count : 0;
 }
-internal sealed class FriendData { internal List<string> BattleFriend = new(); }
+internal sealed class FriendData
+{
+    internal List<string> BattleFriend = new();
+    internal int _Lv = 1;
+    internal string _Name = "";
+    internal string _AbName = "";
+}
 internal sealed class Friend
 {
     internal int LifeValue = 10;
@@ -267,3 +286,5 @@ internal sealed class LoadDataSet
     internal ItemDataSet? GetItemData(string name) => items.TryGetValue(name, out var data) ? data : null;
     internal EquipDataSet? GetEuipData(string name) => equips.TryGetValue(name, out var data) ? data : null;
 }
+
+namespace ExcelData { internal enum KFType { } }

@@ -36,6 +36,59 @@ function Assert-Throws([string] $expected, [scriptblock] $action) {
 
 . (Join-Path $PSScriptRoot 'Deployment.ps1')
 
+function Remove-TestDirectory([string[]] $Path) {
+    foreach ($directory in $Path) {
+        $absolute = [IO.Path]::GetFullPath($directory)
+        $testRoot = [IO.Path]::GetFullPath($temporaryRoot)
+        Require ([IO.Path]::GetFileName($testRoot) -like 'BeastSagaBetter-deployment-tests-*') 'Unexpected test root'
+        $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        Require ($testRoot.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) 'Test root escaped TEMP'
+        Require ($absolute -eq $testRoot -or $absolute.StartsWith($testRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) 'Cleanup escaped test root'
+        Remove-Item -LiteralPath $absolute -Recurse -Force
+    }
+}
+
+# Execute the real entry point in an isolated, disposable fake installation.
+function New-DeploymentFixture([string] $name, [switch] $ExistingTarget, [switch] $Legacy) {
+    $root = Join-Path $temporaryRoot $name
+    $project = Join-Path $root 'project'
+    $game = Join-Path $root 'game'
+    $target = Join-Path $game 'BepInEx/plugins/BeastSagaBetter/BeastSagaBetter.dll'
+    $legacyDir = Join-Path $game 'BepInEx/plugins/SafeDialogueTools'
+    $dist = Join-Path $project 'dist'
+    New-Item -ItemType Directory -Path (Join-Path $project 'tools'), (Join-Path $project 'Core'),
+        (Join-Path $project 'Plugin/bin/Release/net6.0'), $dist | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'Deployment.ps1'), (Join-Path $PSScriptRoot 'deploy-production.ps1') -Destination (Join-Path $project 'tools')
+    Set-Content -LiteralPath (Join-Path $project 'Core/Input.cs') -Value 'input'
+    Set-Content -LiteralPath (Join-Path $project 'Plugin/bin/Release/net6.0/BeastSagaBetter.dll') -Value 'new-plugin'
+    Set-Content -LiteralPath (Join-Path $dist 'BeastSagaBetter.dll') -Value 'old-dist'
+    Set-Content -LiteralPath (Join-Path $dist 'SafeDialogueTools.dll') -Value 'legacy-dist'
+    Set-Content -LiteralPath (Join-Path $dist 'SafeDialogueTools.pdb') -Value 'legacy-symbols'
+    if ($ExistingTarget) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+        Set-Content -LiteralPath $target -Value 'old-target'
+    }
+    if ($Legacy) {
+        New-Item -ItemType Directory -Path $legacyDir -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $legacyDir 'SafeDialogueTools.dll') -Value 'old-legacy'
+    }
+    # Process discovery is the only external boundary; never inspect/control a real game.
+    Add-Content -LiteralPath (Join-Path $project 'tools/Deployment.ps1') -Value 'function Get-Process { param($Name, $ErrorAction) }'
+    [pscustomobject]@{ Project = $project; Game = $game; Target = $target; Legacy = $legacyDir; Dist = $dist }
+}
+function Invoke-FixtureDeployment($fixture) {
+    & (Join-Path $fixture.Project 'tools/deploy-production.ps1') -SkipTests -SkipBuild -GameDir $fixture.Game | Out-Null
+}
+function Require-FileText([string] $path, [string] $text) {
+    Require (Test-Path -LiteralPath $path -PathType Leaf) "Missing file: $path"
+    Require ((Get-Content -LiteralPath $path -Raw).TrimEnd() -eq $text) "Unexpected content: $path"
+}
+function Require-OldDist($fixture) {
+    Require-FileText (Join-Path $fixture.Dist 'BeastSagaBetter.dll') 'old-dist'
+    Require-FileText (Join-Path $fixture.Dist 'SafeDialogueTools.dll') 'legacy-dist'
+    Require-FileText (Join-Path $fixture.Dist 'SafeDialogueTools.pdb') 'legacy-symbols'
+}
+
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("BeastSagaBetter-deployment-tests-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 try {
@@ -79,7 +132,7 @@ try {
         Require ($plan.PluginDir -eq (Join-Path $pluginRoot 'BeastSagaBetter')) $plan.PluginDir
         Require ($plan.LegacyPluginDir -eq $legacy) $plan.LegacyPluginDir
         Require $plan.RequiresMigration 'Migration was not requested'
-        Remove-Item -LiteralPath $legacy -Recurse -Force
+        Remove-TestDirectory $legacy
     }
     Then 'coexisting new and legacy plugin directories are rejected' {
         New-Item -ItemType Directory -Path (Join-Path $pluginRoot 'BeastSagaBetter'), (Join-Path $pluginRoot 'SafeDialogueTools') | Out-Null
@@ -88,7 +141,8 @@ try {
         Set-Content -LiteralPath $hiddenLegacyDll -Value 'hidden-legacy-plugin'
         attrib.exe +h $hiddenLegacyDll
         Assert-Throws '不能同时存在' { New-DeploymentPlan -ProjectRoot $projectRoot -GameDir $gameRoot }
-        Remove-Item -LiteralPath (Join-Path $pluginRoot 'BeastSagaBetter'), (Join-Path $pluginRoot 'SafeDialogueTools') -Recurse -Force
+        Assert-Throws '不能同时存在' { New-DeploymentPlan -ProjectRoot $projectRoot -GameDir $gameRoot -PluginDir (Join-Path $temporaryRoot 'explicit-with-coexistence') }
+        Remove-TestDirectory @((Join-Path $pluginRoot 'BeastSagaBetter'), (Join-Path $pluginRoot 'SafeDialogueTools'))
     }
     Then 'an already disabled legacy directory does not require another migration' {
         $legacy = Join-Path $pluginRoot 'SafeDialogueTools'
@@ -99,7 +153,7 @@ try {
         Require ($plan.PluginDir -eq $newPlugin) $plan.PluginDir
         Require ($null -eq $plan.LegacyPluginDir) 'Inactive legacy directory was exposed as active'
         Require (-not $plan.RequiresMigration) 'Inactive legacy directory requested migration'
-        Remove-Item -LiteralPath $legacy, $newPlugin -Recurse -Force
+        Remove-TestDirectory @($legacy, $newPlugin)
     }
     Then 'an explicit plugin directory is honored without auto-discovery' {
         $explicit = Join-Path $temporaryRoot 'explicit-plugin'
@@ -128,6 +182,104 @@ try {
         $result = Backup-DirectoryTree -SourceDirectory $source -BackupDirectory $backup
         Require ($result.FileCount -eq 1) "file count $($result.FileCount)"
         Require ($result.Hashes.Count -eq 1) "hash count $($result.Hashes.Count)"
+    }
+    Then 'backup includes hidden DLLs and files inside nested hidden directories' {
+        $source = Join-Path $temporaryRoot 'hidden-source'
+        $backup = Join-Path $temporaryRoot 'hidden-backup'
+        New-Item -ItemType Directory -Path (Join-Path $source 'hidden/nested') | Out-Null
+        Set-Content -LiteralPath (Join-Path $source 'Hidden.dll') -Value 'hidden-root'
+        Set-Content -LiteralPath (Join-Path $source 'hidden/nested/Dependency.dll') -Value 'hidden-nested'
+        attrib.exe +h (Join-Path $source 'Hidden.dll')
+        attrib.exe +h (Join-Path $source 'hidden')
+        $result = Backup-DirectoryTree -SourceDirectory $source -BackupDirectory $backup
+        Require ($result.FileCount -eq 2) "file count $($result.FileCount)"
+        Require ($result.Hashes.Count -eq 2) "hash count $($result.Hashes.Count)"
+        Require-FileText (Join-Path $backup 'Hidden.dll') 'hidden-root'
+        Require-FileText (Join-Path $backup 'hidden/nested/Dependency.dll') 'hidden-nested'
+    }
+    Then 'migration refusal leaves only the original active assembly and original dist' {
+        $fixture = New-DeploymentFixture 'migration-refusal' -Legacy
+        New-Item -ItemType Directory -Path (Join-Path $fixture.Legacy '.disabled') | Out-Null
+        Set-Content -LiteralPath (Join-Path $fixture.Legacy '.disabled/evidence.txt') -Value 'retain-evidence'
+        Assert-Throws '禁用目录已存在' { Invoke-FixtureDeployment $fixture }
+        Require (-not (Test-Path -LiteralPath $fixture.Target)) 'new target remained active after refusal'
+        Require-FileText (Join-Path $fixture.Legacy 'SafeDialogueTools.dll') 'old-legacy'
+        Require-FileText (Join-Path $fixture.Legacy '.disabled/evidence.txt') 'retain-evidence'
+        Require-OldDist $fixture
+    }
+    Then 'partial migration failure restores original names and original active assembly' {
+        $fixture = New-DeploymentFixture 'migration-partial' -Legacy
+        New-Item -ItemType Directory -Path (Join-Path $fixture.Legacy 'nested') | Out-Null
+        Set-Content -LiteralPath (Join-Path $fixture.Legacy 'nested/a.dll') -Value 'first-renamed'
+        Set-Content -LiteralPath (Join-Path $fixture.Legacy 'nested/dependency.dll') -Value 'dependency'
+        Set-Content -LiteralPath (Join-Path $fixture.Legacy 'nested/dependency.dll.disabled') -Value 'preexisting-disabled'
+        Assert-Throws '禁用目标已存在' { Invoke-FixtureDeployment $fixture }
+        Require (-not (Test-Path -LiteralPath $fixture.Target)) 'new target remained after partial migration'
+        Require-FileText (Join-Path $fixture.Legacy 'SafeDialogueTools.dll') 'old-legacy'
+        Require-FileText (Join-Path $fixture.Legacy 'nested/a.dll') 'first-renamed'
+        Require-FileText (Join-Path $fixture.Legacy 'nested/dependency.dll') 'dependency'
+        Require-FileText (Join-Path $fixture.Legacy 'nested/dependency.dll.disabled') 'preexisting-disabled'
+        Require (-not (Test-Path -LiteralPath (Join-Path $fixture.Legacy '.disabled'))) 'partial migration directory remained'
+        Require-OldDist $fixture
+    }
+    Then 'publication verification failure removes a newly created target and restores dist' {
+        $fixture = New-DeploymentFixture 'publication-failure'
+        Add-Content -LiteralPath (Join-Path $fixture.Project 'tools/Deployment.ps1') -Value @'
+$script:originalPublish = ${function:Publish-VerifiedFile}
+$script:publicationFaultRaised = $false
+function Publish-VerifiedFile {
+    param($TemporaryFile, $DestinationFile, $ExpectedHash)
+    & $script:originalPublish @PSBoundParameters
+    if ($DestinationFile -like '*game*BeastSagaBetter.dll' -and -not $script:publicationFaultRaised) {
+        $script:publicationFaultRaised = $true
+        throw 'injected post-publication verification failure'
+    }
+}
+'@
+        Assert-Throws 'injected post-publication verification failure' { Invoke-FixtureDeployment $fixture }
+        Require (-not (Test-Path -LiteralPath $fixture.Target)) 'new target survived publication failure'
+        Require-OldDist $fixture
+    }
+    Then 'record failure after migration restores the original legacy directory' {
+        $fixture = New-DeploymentFixture 'migration-record-failure' -Legacy
+        Add-Content -LiteralPath (Join-Path $fixture.Project 'tools/Deployment.ps1') -Value @'
+function Set-Content {
+    param($LiteralPath, $Value, $Encoding)
+    if ($LiteralPath -like '*production-deployment-*.json') { throw 'injected record write failure' }
+    Microsoft.PowerShell.Management\Set-Content @PSBoundParameters
+}
+'@
+        Assert-Throws 'injected record write failure' { Invoke-FixtureDeployment $fixture }
+        Require (-not (Test-Path -LiteralPath $fixture.Target)) 'new target survived record failure'
+        Require-FileText (Join-Path $fixture.Legacy 'SafeDialogueTools.dll') 'old-legacy'
+        Require (-not (Test-Path -LiteralPath (Join-Path $fixture.Legacy '.disabled'))) 'legacy remained disabled'
+        Require-OldDist $fixture
+    }
+    foreach ($existing in @($true, $false)) {
+        Then "record failure restores original publication state (existing target: $existing)" {
+            $fixture = New-DeploymentFixture "record-failure-$existing" -ExistingTarget:$existing
+            Add-Content -LiteralPath (Join-Path $fixture.Project 'tools/Deployment.ps1') -Value @'
+function Set-Content {
+    param($LiteralPath, $Value, $Encoding)
+    if ($LiteralPath -like '*production-deployment-*.json') { throw 'injected record write failure' }
+    Microsoft.PowerShell.Management\Set-Content @PSBoundParameters
+}
+'@
+            Assert-Throws 'injected record write failure' { Invoke-FixtureDeployment $fixture }
+            if ($existing) { Require-FileText $fixture.Target 'old-target' }
+            else { Require (-not (Test-Path -LiteralPath $fixture.Target)) 'new target survived record failure' }
+            Require-OldDist $fixture
+        }
+    }
+    Then 'a clean clone creates its verification directory and records a complete migration' {
+        $fixture = New-DeploymentFixture 'clean-clone' -Legacy
+        Invoke-FixtureDeployment $fixture
+        Require-FileText $fixture.Target 'new-plugin'
+        Require-FileText (Join-Path $fixture.Legacy '.disabled/SafeDialogueTools.dll.disabled') 'old-legacy'
+        $records = @(Get-ChildItem -LiteralPath (Join-Path $fixture.Project 'verification') -File -Filter 'production-deployment-*.json')
+        Require ($records.Count -eq 1) "record count $($records.Count)"
+        $record = Get-Content -LiteralPath $records[0].FullName -Raw | ConvertFrom-Json
+        Require $record.legacyPluginDisabled 'migration record is missing'
     }
     Then 'verified temporary copies stay in the destination directory and match the source' {
         $destination = Join-Path $temporaryRoot 'destination'
@@ -215,7 +367,7 @@ try {
         Require (-not (Test-Path -LiteralPath (Join-Path $legacy '.disabled'))) 'disabled directory was not removed'
     }
 } finally {
-    Remove-Item -LiteralPath $temporaryRoot -Recurse -Force
+    Remove-TestDirectory $temporaryRoot
 }
 
 $passed = $script:checks - $script:failures

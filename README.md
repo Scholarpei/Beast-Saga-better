@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
 
 # Beast-Saga-better
 
@@ -10,7 +10,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows-0078d6?style=for-the-badge&logo=windows11)](https://learn.microsoft.com/windows/)
 [![Runtime](https://img.shields.io/badge/runtime-.NET%206-512bd4?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
 [![BepInEx](https://img.shields.io/badge/loader-BepInEx%20IL2CPP-8b5cf6?style=for-the-badge)](https://bepinex.dev/)
-[![Tests](https://img.shields.io/badge/tests-245%2F245-brightgreen?style=for-the-badge)](#验证)
+[![Tests](https://img.shields.io/badge/tests-282%2F282-brightgreen?style=for-the-badge)](#验证)
 
 </div>
 
@@ -35,7 +35,7 @@ RPG 对话最大的成本不是读文本，而是选错以后不知道要回溯�
 | 角色影响  | 好感、入队、离队、经验、悟性、属性、生活经验 |
 | 武学与任务 | 新武功、内功、技能转移、任务状态与步骤变化  |
 | 分支结果  | 共同结果与各分支差异分开列出         |
-| 危险边界  | 战斗、地图切换、商店、立即存档处停止继续预测 |
+| 危险边界  | 战斗、地图切换、商店处停止；立即存档显示提示 |
 
 提交材料的例子：
 
@@ -48,6 +48,8 @@ RPG 对话最大的成本不是读文本，而是选错以后不知道要回溯�
 ```
 
 材料不足时会直接写明本次不能完成任务；有回溯选项的对话会保留当前选项的奖励，不把“让我再想想”“返回再选”的路径混进去。
+
+同一路径的物品变化会在当前持有总量上累计；变量或属性修改影响后续判定、但无法静态确认新状态时，显示未知。已知和未知选项并存时，已知奖励只作为可能分支展示。
 
 ### 2. 检查点与存档库
 
@@ -95,7 +97,9 @@ RPG 对话最大的成本不是读文本，而是选错以后不知道要回溯�
 
 ### 6. 地图点击传送
 
-世界页或状态页的“地图传送”可进入当前地图的选择模式。鼠标位置会用绿色或红色标记是否可安全站人；按住任意鼠标键拖动或靠近屏幕边缘可移动相机查看地图，左键短点绿色位置后走游戏官方传送流程移动到目标点，`Esc` 退出并恢复相机。
+世界页或状态页的“地图传送”可进入当前地图的选择模式。鼠标位置会用绿色或红色标记是否可安全站人；按住任意鼠标键拖动或靠近屏幕边缘可移动相机查看地图，左键短点绿色位置后移动玩家并更新当前地图加载，`Esc` 退出并恢复相机。
+
+一次左键按压中，只要鼠标曾超过拖动阈值，松开就不会传送，即使鼠标又回到按下的位置。
 
 ### 7. 战斗修改
 
@@ -146,16 +150,18 @@ Release 包当前只包含插件本体 `BeastSagaBetter.dll`。它假定游戏�
 ./tools/deploy-production.ps1
 ```
 
-脚本要求先退出游戏，默认执行完整测试与 Release 构建；已自行测试或构建时可加 `-SkipTests`、`-SkipBuild`。部署相关纯辅助函数测试可用 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/deployment.tests.ps1` 单独执行。
+脚本要求先退出游戏，默认执行完整测试与 Release 构建；已自行测试或构建时可加 `-SkipTests`、`-SkipBuild`。部署脚本回归可用 `pwsh -NoProfile -ExecutionPolicy Bypass -File tools/deployment.tests.ps1` 单独执行，包含临时目录中的发布、迁移及回滚失败场景。
 
 默认按项目位置定位正式游戏根目录，并处理 `BepInEx/plugins/` 下的改名迁移：
 
 - 新 `BeastSagaBetter/` 与旧 `SafeDialogueTools/` 同时存在时直接拒绝，避免双插件；
-- 只找到唯一旧目录时，先把整个旧目录完整备份到仓库 `backups/<stamp>-deploy/legacy-plugin/`，再部署新 DLL 并把旧目录内容移入 `.disabled/`；
+- 只找到唯一旧目录时，先把整个旧目录（包括隐藏文件与隐藏子目录）完整备份到仓库 `backups/<stamp>-deploy/legacy-plugin/`，再部署新 DLL 并把旧目录内容移入 `.disabled/`；
 - 游戏根目录不在项目父目录时用 `-GameDir` 显式指定；需要自定义安装位置时用 `-PluginDir` 显式指定，此时脚本不执行默认目录迁移；
 - `-SkipBuild` 会检查 `Plugin/`、`Core/` 的 `.cs` 与 `.csproj` 是否晚于构建产物。
 
-部署复制使用目标同目录临时文件、SHA-256 校验和原子替换；后续校验失败会用同目录保存的旧目标副本恢复。脚本还会移除 `dist/` 中不再使用的 `SafeDialogueTools.dll/.pdb`，再写入当前 `BeastSagaBetter.dll`。
+部署前会创建并检查记录目录。复制使用目标同目录临时文件与 SHA-256 校验；发布、旧目录迁移或记录写入抛出异常时，尝试从保留的备份恢复原插件和 `dist/`，移除本次新增的 DLL。回滚自身失败时会报告原因和备份位置。进程被强制结束、断电或目标持续不可写不在自动回滚保证范围内。
+
+脚本还会移除 `dist/` 中不再使用的 `SafeDialogueTools.dll/.pdb`，再写入当前 `BeastSagaBetter.dll`。`-PluginDir` 只指定目标，不绕过默认新旧活动目录共存检查。
 
 ## 快捷键
 
@@ -190,7 +196,7 @@ BeastSagaBetterData/
 
 ## 验证
 
-自动化测试覆盖检查点历史、读取策略、判定展示、面板布局、角色、点数、物品修改和地图点击传送纯逻辑。当前测试集为 224 项。
+自动化测试覆盖检查点历史、读取策略、判定展示、面板布局、角色快照、点数、物品修改、地图点击传送和战斗修改的纯逻辑与受控桩流程。当前控制台测试集为 282 项；部署与备份脚本回归另行执行。
 
 有限场景通过不等于所有剧情旗标、战斗触发器和磁盘异常都已覆盖。遇到读档卡住或状态异常时，先停用对话前 SL 并保留现场，再反馈日志与检查点目录结构。
 

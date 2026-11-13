@@ -356,6 +356,9 @@ internal static class CheatFeatureTests
         });
 
         CheatSessionState.Reset();
+        var snapshots = CheatSnapshotTests.Run();
+        checks += snapshots.Checks;
+        failures += snapshots.Failures;
         return (checks, failures);
     }
 }
