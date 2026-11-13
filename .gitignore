@@ -29,3 +29,13 @@ VERIFICATION.md
 
 docs/
 tmp/
+
+# Shared agent guidance; keep historical/local docs ignored.
+!/AGENTS.md
+!/docs/
+/docs/*
+!/docs/agents/
+/docs/agents/*
+!/docs/agents/architecture.md
+!/docs/agents/development.md
+!/docs/agents/safety.md
