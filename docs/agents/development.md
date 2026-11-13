@@ -76,6 +76,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools/start-panel-preview.ps1 -Por
 
 默认以前台进程运行并用 Ctrl+C 停止。需要后台启动时隐藏辅助进程窗口，记录 PID 并只停止本次启动的进程。
 
+“战斗演示”选择器覆盖可操作、技能执行中、二次确认及原生处理状态。该页使用明确标注的演示单位与检查点，只改网页内存，不连接游戏战斗接口。
+
+若沙箱仍沿用 `SafeDialogueToolsData/`，上述启动脚本的固定新目录可能不存在；可给预览程序显式传入已有检查点目录，例如设置 `$env:ASPNETCORE_URLS = 'http://127.0.0.1:5087'` 后执行 `./tools/sdk/dotnet.exe run --project tools/PanelPreview/PanelPreview.csproj -c Release --no-launch-profile -- ./sandbox/Game/SafeDialogueToolsData/checkpoints`。不要为了预览迁移或重建沙箱数据。
+
 ## 游戏沙箱验证
 
 涉及游戏内操作前先阅读[沙箱身份与硬链接规则](safety.md#沙箱与正式目录边界)。以下脚本有实际副作用，不属于常规文档检查。
@@ -92,6 +96,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tools/send-test.ps1 -Command state
 `start-test.ps1` 默认以 `-batchmode -nographics` 隐藏启动；加 `-Graphical` 可见启动并聚焦游戏。它会向已有同路径沙箱进程发 `quit`，然后复制当前 Release DLL、调整沙箱控制台配置并重新启动；不要当作只读检查使用。
 
 测试桥仅在 `Plugin.TestMode` 下轮询 `test-command.txt`，返回 `test-result.txt`；`state` 还生成 `test-state.json`。可用命令以 `Plugin/TestBridge.cs` 的分发为准，发送下一条前确认前一条已完成。
+
+战斗验证命令包括 `combat-state`（阶段、单位、检查点、迭代器和经验/背包快照）、`combat-triggers`、`combat-start-trigger:<当前场景:实例ID>`、`combat-restore:<单位键>`、`combat-restore-all`、`combat-defeat-prepare`、`combat-defeat-confirm` 和 `combat-cancel`。状态写入 `test-combat.json`，触发器写入 `test-combat-triggers.json`。入场命令仅调用已有且已具备玩家/敌方原生条件的真实场景触发器，不构造敌人或结算参数。
+
+`combat-ui-wait` / `combat-ui-close-result` 调用真实战斗 UI 的待机/结果关闭回调，可用于检查面板输入隔断及原生离场；`combat-resolution:宽,高` 仅接受 1280×720、1920×1080、2560×1440、3840×2160。所有这些命令只在已验证沙箱启用，不能成为正式环境远程入口。
 
 ### 首次准备沙箱
 

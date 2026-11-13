@@ -23,10 +23,10 @@ internal static class PanelKeyGate
          string.Equals(keyName, Plugin.ClosePanelKey.Value.ToString(), StringComparison.OrdinalIgnoreCase));
 
     internal static bool ShouldBlock(KeyCode key) =>
-        PanelKeySuppression.Blocks(IsPanelKey(key), CommandPanelState.Open, ConsumedFrame, Time.frameCount);
+        CombatEditor.BlockGameInput || PanelKeySuppression.Blocks(IsPanelKey(key), CommandPanelState.Open, ConsumedFrame, Time.frameCount);
 
     internal static bool ShouldBlockName(string keyName) =>
-        PanelKeySuppression.Blocks(IsPanelKeyName(keyName), CommandPanelState.Open, ConsumedFrame, Time.frameCount);
+        CombatEditor.BlockGameInput || PanelKeySuppression.Blocks(IsPanelKeyName(keyName), CommandPanelState.Open, ConsumedFrame, Time.frameCount);
 
     internal static bool ShouldBlockCancelButton() =>
         PanelKeySuppression.Blocks(true, CommandPanelState.Open, ConsumedFrame, Time.frameCount);
@@ -116,7 +116,7 @@ internal static class PanelCancelButtonDownGate
 {
     private static bool Prefix(string __0, ref bool __result)
     {
-        if (!IsCancelButton(__0) || !PanelKeyGate.ShouldBlockCancelButton()) return true;
+        if (PanelKeyGate.ReadingOwnInput || !(CombatEditor.BlockGameInput || IsCancelButton(__0) && PanelKeyGate.ShouldBlockCancelButton())) return true;
         __result = false;
         return false;
     }
@@ -130,8 +130,8 @@ internal static class PanelCancelButtonHeldGate
 {
     private static bool Prefix(string __0, ref bool __result)
     {
-        if (!string.Equals(__0, "Cancel", StringComparison.OrdinalIgnoreCase) ||
-            !PanelKeyGate.ShouldBlockCancelButton()) return true;
+        if (PanelKeyGate.ReadingOwnInput || !(CombatEditor.BlockGameInput || string.Equals(__0, "Cancel", StringComparison.OrdinalIgnoreCase) &&
+            PanelKeyGate.ShouldBlockCancelButton())) return true;
         __result = false;
         return false;
     }
@@ -142,8 +142,8 @@ internal static class PanelCancelButtonUpGate
 {
     private static bool Prefix(string __0, ref bool __result)
     {
-        if (!string.Equals(__0, "Cancel", StringComparison.OrdinalIgnoreCase) ||
-            !PanelKeyGate.ShouldBlockCancelButton()) return true;
+        if (PanelKeyGate.ReadingOwnInput || !(CombatEditor.BlockGameInput || string.Equals(__0, "Cancel", StringComparison.OrdinalIgnoreCase) &&
+            PanelKeyGate.ShouldBlockCancelButton())) return true;
         __result = false;
         return false;
     }

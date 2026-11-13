@@ -213,6 +213,7 @@ internal static class TestBridge
             else if (command == "dump-db") DumpDatabase();
             else if (command == "capture") ScreenCapture.CaptureScreenshot(Path.Combine(Plugin.GameRoot, "test-frame.png"));
             else if (command == "cheat-state") WriteCheatState();
+            else if (command.StartsWith("combat-", StringComparison.Ordinal)) CombatCommand(command);
             else if (command.StartsWith("items-", StringComparison.Ordinal)) ItemCommand(command);
             else if (command == "cheat-probe") WriteCheatProbe();
             else if (command.StartsWith("cheat-set-stat|")) RunCheatSetStat(command);
@@ -466,6 +467,43 @@ internal static class TestBridge
                 Speed = CheatEditor.MovementSpeed(),
                 FishingInstantSuccess = Plugin.EnableFishingInstantSuccess.Value
             }, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static void CombatCommand(string command)
+    {
+        if (!Plugin.TestMode) throw new InvalidOperationException("Combat diagnostics require verified TestMode");
+        if (command == "combat-state")
+            File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-combat.json"), JsonSerializer.Serialize(
+                CombatEditor.Diagnostics(), new JsonSerializerOptions { WriteIndented = true }));
+        else if (command == "combat-triggers")
+            File.WriteAllText(Path.Combine(Plugin.GameRoot, "test-combat-triggers.json"), JsonSerializer.Serialize(
+                CombatEditor.TriggerDiagnostics(), new JsonSerializerOptions { WriteIndented = true }));
+        else if (command.StartsWith("combat-start-trigger:", StringComparison.Ordinal)) CombatEditor.StartTriggerForTest(command[21..]);
+        else if (command == "combat-restore-all")
+        { if (!CombatEditor.RequestRestore(null)) throw new InvalidOperationException(CombatEditor.RequestError); }
+        else if (command.StartsWith("combat-restore:", StringComparison.Ordinal))
+        { if (!CombatEditor.RequestRestore(command[15..])) throw new InvalidOperationException(CombatEditor.RequestError); }
+        else if (command == "combat-defeat-prepare")
+        { if (!CombatEditor.PrepareDefeat()) throw new InvalidOperationException(CombatEditor.RequestError); }
+        else if (command == "combat-defeat-confirm")
+        { if (!CombatEditor.ConfirmDefeat()) throw new InvalidOperationException(CombatEditor.RequestError); }
+        else if (command == "combat-cancel") CombatEditor.CancelConfirmation();
+        else if (command == "combat-ui-wait")
+            (LJG.Framework.Main.m_UI?.GetOpenedUI<BattleUILogicResident>() ?? throw new InvalidOperationException("战斗 UI 未打开")).OnClickMoveNext();
+        else if (command == "combat-ui-close-result")
+        {
+            if (BattleManager._Instance?._IsGameOver != true) throw new InvalidOperationException("当前没有原生结算结果");
+            (LJG.Framework.Main.m_UI?.GetOpenedUI<BattleUILogicResident>() ?? throw new InvalidOperationException("战斗 UI 未打开")).OnClickQuitResult();
+        }
+        else if (command.StartsWith("combat-resolution:", StringComparison.Ordinal))
+        {
+            var size = command[18..].Split(',');
+            if (size.Length != 2 || !int.TryParse(size[0], out var width) || !int.TryParse(size[1], out var height) ||
+                !new[] { (1280, 720), (1920, 1080), (2560, 1440), (3840, 2160) }.Contains((width, height)))
+                throw new InvalidOperationException("Unsupported combat test resolution");
+            Screen.SetResolution(width, height, false);
+        }
+        else throw new InvalidOperationException("Unknown combat command");
     }
 
     private static void RefreshContinueReady()

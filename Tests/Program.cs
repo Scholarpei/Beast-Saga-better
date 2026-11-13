@@ -848,7 +848,7 @@ try
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Character));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Points));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Items));
-        Require(!CheatSectionCatalog.IsAvailable(CheatSection.Combat));
+        Require(CheatSectionCatalog.IsAvailable(CheatSection.Combat));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.World));
         Require(CheatSectionCatalog.IsAvailable(CheatSection.Other));
     });
@@ -861,7 +861,7 @@ try
         CommandPanelState.SelectCheatSection(CheatSection.Items);
         Require(CommandPanelState.CheatSection == CheatSection.Items);
         CommandPanelState.SelectCheatSection(CheatSection.Combat);
-        Require(CommandPanelState.CheatSection == CheatSection.Items);
+        Require(CommandPanelState.CheatSection == CheatSection.Combat);
         CommandPanelState.SelectCheatSection(CheatSection.Other);
         Require(CommandPanelState.CheatSection == CheatSection.Other);
         CommandPanelState.Reset();
@@ -972,6 +972,9 @@ try
     var panelRegressions = PanelRegressionTests.Run();
     checks += panelRegressions.Checks;
     failures += panelRegressions.Failures;
+    var combatFeatures = CombatFeatureTests.Run();
+    checks += combatFeatures.Checks;
+    failures += combatFeatures.Failures;
 }
 finally
 {
